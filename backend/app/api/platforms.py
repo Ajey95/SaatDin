@@ -1,5 +1,3 @@
-"""Module for backend\app\api\platforms.py."""
-
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends

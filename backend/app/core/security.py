@@ -1,5 +1,3 @@
-"""Module for backend\app\core\security.py."""
-
 from __future__ import annotations
 
 import hashlib

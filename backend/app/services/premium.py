@@ -1,5 +1,3 @@
-"""Module for backend\app\services\premium.py."""
-
 from __future__ import annotations
 
 from typing import List, Dict, Any
