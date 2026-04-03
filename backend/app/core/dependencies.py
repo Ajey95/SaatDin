@@ -1,3 +1,5 @@
+"""Module for backend\app\core\dependencies.py."""
+
 from __future__ import annotations
 
 from fastapi import Depends, HTTPException, status
