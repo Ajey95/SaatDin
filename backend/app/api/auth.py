@@ -1,3 +1,5 @@
+"""Module for backend\app\api\auth.py."""
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone

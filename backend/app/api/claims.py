@@ -1,3 +1,5 @@
+"""Module for backend\app\api\claims.py."""
+
 from __future__ import annotations
 
 import logging
