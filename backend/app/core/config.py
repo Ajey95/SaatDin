@@ -1,3 +1,5 @@
+"""Module for backend\app\core\config.py."""
+
 from __future__ import annotations
 
 from pathlib import Path
