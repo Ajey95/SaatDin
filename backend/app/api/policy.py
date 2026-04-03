@@ -50,6 +50,7 @@ def _build_policy(worker: dict, settled_total: float) -> PolicyOut:
         pendingPlan=worker.get("pending_plan_name"),
         pendingEffectiveDate=pending_effective_date,
         zone=str(worker["zone_name"]),
+        zonePincode=str(worker["zone_pincode"]),
         weeklyPremium=selected.weeklyPremium,
         earningsProtected=round(settled_total, 2),
         parametricCoverageOn=True,

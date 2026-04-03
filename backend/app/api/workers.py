@@ -10,6 +10,7 @@ from ..core.zone_cache import resolve_zone, supports_platform
 from ..models.platform import Platform
 from ..models.schemas import ApiResponse, RegisterRequest, WorkerOut, WorkerStatusOut
 from ..services.premium import build_plans
+from ..core.db import total_settled_amount_for_phone
 
 router = APIRouter(tags=["workers"])
 logger = logging.getLogger(__name__)
@@ -58,8 +59,11 @@ async def register(payload: RegisterRequest, current_phone: str = Depends(get_cu
         phone=record["phone"],
         platform=record["platform_name"],
         zone=record["zone_name"],
+        zonePincode=record["zone_pincode"],
         plan=record["plan_name"],
         policyId=f"SR-{record['zone_pincode'][-4:]}",
+        totalEarnings=0,
+        earningsProtected=0,
     )
     logger.info("register_succeeded phone=%s policy_id=%s", out.phone, out.policyId)
     return ApiResponse(success=True, data=out, message="Worker registered")
@@ -80,8 +84,11 @@ async def get_worker_status(current_phone: str = Depends(get_current_phone)) -> 
         phone=worker["phone"],
         platform=worker["platform_name"],
         zone=worker["zone_name"],
+        zonePincode=worker["zone_pincode"],
         plan=worker["plan_name"],
         policyId=f"SR-{worker['zone_pincode'][-4:]}",
+        totalEarnings=0,
+        earningsProtected=0,
     )
     return ApiResponse(
         success=True,
@@ -93,12 +100,16 @@ async def get_worker_status(current_phone: str = Depends(get_current_phone)) -> 
 @router.get("/workers/me", response_model=ApiResponse)
 async def get_my_worker(worker: dict = Depends(get_current_worker)) -> ApiResponse:
     logger.info("worker_profile_requested phone=%s", worker["phone"])
+    settled_total = await total_settled_amount_for_phone(str(worker["phone"]))
     out = WorkerOut(
         name=worker["name"],
         phone=worker["phone"],
         platform=worker["platform_name"],
         zone=worker["zone_name"],
+        zonePincode=worker["zone_pincode"],
         plan=worker["plan_name"],
         policyId=f"SR-{worker['zone_pincode'][-4:]}",
+        totalEarnings=round(settled_total),
+        earningsProtected=round(settled_total),
     )
     return ApiResponse(success=True, data=out)

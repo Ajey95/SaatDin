@@ -55,6 +55,7 @@ class WorkerOut(BaseModel):
     phone: str
     platform: str
     zone: str
+    zonePincode: str
     plan: str
     policyId: str
     totalEarnings: int = 0
@@ -108,6 +109,7 @@ class PolicyOut(BaseModel):
     pendingPlan: Optional[str] = None
     pendingEffectiveDate: Optional[str] = None
     zone: str
+    zonePincode: str
     weeklyPremium: int
     earningsProtected: float
     parametricCoverageOn: bool
