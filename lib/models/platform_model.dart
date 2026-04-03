@@ -4,7 +4,7 @@ class DeliveryPlatform {
   final String name;
   final String deliveryTime;
   final String coverageLevel;
-  final IconData icon;
+  final String logoPath;
   final Color iconColor;
   final Color iconBackground;
 
@@ -12,7 +12,7 @@ class DeliveryPlatform {
     required this.name,
     required this.deliveryTime,
     required this.coverageLevel,
-    required this.icon,
+    required this.logoPath,
     required this.iconColor,
     required this.iconBackground,
   });
@@ -23,25 +23,25 @@ class DeliveryPlatform {
         name: 'Blinkit',
         deliveryTime: '10-min delivery',
         coverageLevel: 'Higher coverage',
-        icon: Icons.delivery_dining,
-        iconColor: Color(0xFFE23744),
-        iconBackground: Color(0xFFFFF0F0),
+        logoPath: 'assets/images/Blinkit-yellow-rounded.svg',
+        iconColor: Color(0xFF1C1C1C),
+        iconBackground: Color(0xFFF8CB46),
       ),
       const DeliveryPlatform(
         name: 'Zepto',
         deliveryTime: '10-min delivery',
         coverageLevel: 'Higher coverage',
-        icon: Icons.flash_on,
-        iconColor: Color(0xFFF7941D),
-        iconBackground: Color(0xFFFFF8EC),
+        logoPath: 'assets/images/Zepto_Logo.svg',
+        iconColor: Colors.white,
+        iconBackground: Color(0xFF5E248F),
       ),
       const DeliveryPlatform(
         name: 'Swiggy Instamart',
         deliveryTime: '30-min delivery',
         coverageLevel: 'Standard coverage',
-        icon: Icons.favorite,
+        logoPath: 'assets/images/swiggy-1.svg',
         iconColor: Color(0xFFFC8019),
-        iconBackground: Color(0xFFFFF0E6),
+        iconBackground: Color(0xFFFFF7ED),
       ),
     ];
   }

@@ -34,6 +34,13 @@ migrate_working_dir/
 /coverage/
 analyze_output.txt
 
+# Environment files
+.env
+
+**/.env
+
+
+
 # Symbolication related
 app.*.symbols
 

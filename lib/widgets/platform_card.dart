@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../../theme/app_colors.dart';
 import '../../models/platform_model.dart';
 
@@ -16,6 +17,11 @@ class PlatformCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    bool isSvg = platform.logoPath.toLowerCase().endsWith('.svg');
+    final selectedIndicatorColor = platform.iconBackground.computeLuminance() < 0.7
+        ? platform.iconBackground
+        : platform.iconColor;
+
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
@@ -27,24 +33,58 @@ class PlatformCard extends StatelessWidget {
               : AppColors.cardBackground,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isSelected ? AppColors.cardSelectedBorder : AppColors.border,
-            width: isSelected ? 2 : 1,
+            color: isSelected ? platform.iconBackground : AppColors.border,
+            width: isSelected ? 2.5 : 1,
           ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: platform.iconBackground.withValues(alpha: 0.15),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  )
+                ]
+              : [],
         ),
         child: Row(
           children: [
-            // Platform icon
+            // Platform icon/logo
             Container(
-              width: 48,
-              height: 48,
+              width: 52,
+              height: 52,
               decoration: BoxDecoration(
                 color: platform.iconBackground,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(
-                platform.icon,
-                color: platform.iconColor,
-                size: 24,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: isSvg
+                    ? Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: SvgPicture.asset(
+                          platform.logoPath,
+                          placeholderBuilder: (BuildContext context) => Center(
+                            child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  platform.iconColor,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      )
+                    : Image.asset(
+                        platform.logoPath,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => Icon(
+                          Icons.delivery_dining,
+                          color: platform.iconColor,
+                        ),
+                      ),
               ),
             ),
             const SizedBox(width: 14),
@@ -80,10 +120,10 @@ class PlatformCard extends StatelessWidget {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: isSelected ? AppColors.success : AppColors.border,
+                  color: isSelected ? selectedIndicatorColor : AppColors.border,
                   width: 2,
                 ),
-                color: isSelected ? AppColors.success : Colors.transparent,
+                color: isSelected ? selectedIndicatorColor : Colors.transparent,
               ),
               child: isSelected
                   ? const Icon(
