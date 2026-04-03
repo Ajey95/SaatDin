@@ -1,5 +1,3 @@
-"""Module for backend\app\api\health.py."""
-
 from __future__ import annotations
 import logging
 

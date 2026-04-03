@@ -1,5 +1,3 @@
-"""Module for backend\app\core\phone.py."""
-
 from __future__ import annotations
 
 

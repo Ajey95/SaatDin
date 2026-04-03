@@ -1,5 +1,3 @@
-"""Module for backend\app\api\triggers.py."""
-
 from __future__ import annotations
 
 import logging

@@ -1,5 +1,3 @@
-"""Module for backend\scripts\migrate_sqlite_to_supabase.py."""
-
 from __future__ import annotations
 
 import argparse

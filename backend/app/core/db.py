@@ -1,5 +1,3 @@
-"""Module for backend\app\core\db.py."""
-
 from __future__ import annotations
 
 from datetime import datetime, timezone

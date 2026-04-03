@@ -1,5 +1,3 @@
-"""Module for backend\app\api\workers.py."""
-
 from __future__ import annotations
 import logging
 
