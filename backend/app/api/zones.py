@@ -1,3 +1,5 @@
+"""Module for backend\app\api\zones.py."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
