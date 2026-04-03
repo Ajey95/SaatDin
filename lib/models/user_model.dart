@@ -3,6 +3,7 @@ class User {
   final String phone;
   final String platform;
   final String zone;
+  final String zonePincode;
   final String plan;
   final String policyId;
   final double totalEarnings;
@@ -15,6 +16,7 @@ class User {
     required this.phone,
     required this.platform,
     required this.zone,
+    required this.zonePincode,
     required this.plan,
     required this.policyId,
     required this.totalEarnings,
@@ -23,18 +25,45 @@ class User {
     this.language = 'English',
   });
 
+  static String _readString(Map<String, dynamic> json, List<String> keys) {
+    for (final key in keys) {
+      final value = json[key];
+      if (value == null) continue;
+      final parsed = value.toString().trim();
+      if (parsed.isNotEmpty) return parsed;
+    }
+    return '';
+  }
+
+  static double _readDouble(Map<String, dynamic> json, List<String> keys) {
+    for (final key in keys) {
+      final value = json[key];
+      if (value == null) continue;
+      if (value is num) return value.toDouble();
+      if (value is String) {
+        final normalized = value.replaceAll(',', '').trim();
+        final parsed = double.tryParse(normalized);
+        if (parsed != null) return parsed;
+      }
+    }
+    return 0;
+  }
+
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
-      name: (json['name'] as String? ?? '').trim(),
-      phone: (json['phone'] as String? ?? '').trim(),
-      platform: (json['platform'] as String? ?? '').trim(),
-      zone: (json['zone'] as String? ?? '').trim(),
-      plan: (json['plan'] as String? ?? '').trim(),
-      policyId: (json['policyId'] as String? ?? '').trim(),
-      totalEarnings: (json['totalEarnings'] as num? ?? 0).toDouble(),
-      earningsProtected: (json['earningsProtected'] as num? ?? 0).toDouble(),
+      name: _readString(json, const ['name']),
+      phone: _readString(json, const ['phone']),
+      platform: _readString(json, const ['platform', 'platformName', 'platform_name']),
+      zone: _readString(json, const ['zone', 'zoneName', 'zone_name']),
+      zonePincode: _readString(json, const ['zonePincode', 'zone_pincode', 'pincode']),
+      plan: _readString(json, const ['plan', 'planName', 'plan_name']),
+      policyId: _readString(json, const ['policyId', 'policy_id']),
+      totalEarnings: _readDouble(json, const ['totalEarnings', 'total_earnings']),
+      earningsProtected: _readDouble(json, const ['earningsProtected', 'earnings_protected']),
       isVerified: json['isVerified'] == true,
-      language: (json['language'] as String? ?? 'English').trim(),
+      language: _readString(json, const ['language']).isEmpty
+          ? 'English'
+          : _readString(json, const ['language']),
     );
   }
 
@@ -44,6 +73,7 @@ class User {
       'phone': phone,
       'platform': platform,
       'zone': zone,
+      'zonePincode': zonePincode,
       'plan': plan,
       'policyId': policyId,
       'totalEarnings': totalEarnings,
@@ -59,6 +89,7 @@ class User {
       phone: '98765 43210',
       platform: 'Blinkit',
       zone: 'Bellandur',
+      zonePincode: '560103',
       plan: 'Standard',
       policyId: 'SR-9921',
       totalEarnings: 42850.00,

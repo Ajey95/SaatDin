@@ -9,4 +9,8 @@ class TabRouter {
     if (index < 0) return;
     tabIndex.value = index;
   }
+
+  static void resetToHome() {
+    tabIndex.value = 0;
+  }
 }

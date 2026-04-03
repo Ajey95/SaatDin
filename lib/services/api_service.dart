@@ -51,6 +51,7 @@ class ApiService {
   static const String _tokenStorageKey = 'saatdin_access_token';
   String? _accessToken;
   String? _lastError;
+  bool _sessionInitialized = false;
 
   // Singleton
   static final ApiService _instance = ApiService._internal();
@@ -98,6 +99,17 @@ class ApiService {
     if (token != null && token.isNotEmpty) {
       _accessToken = token;
     }
+    _sessionInitialized = true;
+  }
+
+  Future<void> _ensureSessionInitialized() async {
+    if (_sessionInitialized) return;
+    try {
+      await initializeSession();
+    } catch (_) {
+      // Keep calls resilient in contexts where storage is temporarily unavailable.
+      _sessionInitialized = true;
+    }
   }
 
   Future<void> _persistSessionToken(String token) async {
@@ -107,6 +119,7 @@ class ApiService {
 
   Future<void> clearSession() async {
     _accessToken = null;
+    _sessionInitialized = true;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_tokenStorageKey);
   }
@@ -220,6 +233,7 @@ class ApiService {
     required String planName,
     String? name,
   }) async {
+    await _ensureSessionInitialized();
     if (_accessToken == null) return null;
 
     try {
@@ -256,6 +270,7 @@ class ApiService {
 
   /// GET /platforms
   Future<List<DeliveryPlatform>> getPlatforms() async {
+    await _ensureSessionInitialized();
     if (_accessToken == null) {
       throw Exception('Authentication required. Please verify OTP first.');
     }
@@ -300,6 +315,7 @@ class ApiService {
     required String zone,
     required String platform,
   }) async {
+    await _ensureSessionInitialized();
     if (_accessToken == null) {
       throw Exception('Authentication required. Please verify OTP first.');
     }
@@ -333,6 +349,7 @@ class ApiService {
 
   /// GET /zones
   Future<List<ZoneRisk>> getZones() async {
+    await _ensureSessionInitialized();
     if (_accessToken == null) {
       throw Exception('Authentication required. Please verify OTP first.');
     }
@@ -361,6 +378,7 @@ class ApiService {
 
   /// GET /zones?platform={platform}
   Future<List<ZoneRisk>> getZonesForPlatform(String platform) async {
+    await _ensureSessionInitialized();
     if (_accessToken == null) {
       throw Exception('Authentication required. Please verify OTP first.');
     }
@@ -398,6 +416,7 @@ class ApiService {
 
   /// GET /policy/me
   Future<Map<String, dynamic>> getPolicy(String userId) async {
+    await _ensureSessionInitialized();
     if (_accessToken == null) {
       throw Exception('Authentication required. Please verify OTP first.');
     }
@@ -421,6 +440,7 @@ class ApiService {
 
   /// PUT /policy/plan
   Future<Map<String, dynamic>> updatePolicyPlan(String planName) async {
+    await _ensureSessionInitialized();
     if (_accessToken == null) {
       throw Exception('Authentication required. Please verify OTP first.');
     }
@@ -497,19 +517,49 @@ class ApiService {
     }
   }
 
+  String _readString(Map<String, dynamic> raw, List<String> keys, {String fallback = ''}) {
+    for (final key in keys) {
+      final value = raw[key];
+      if (value == null) continue;
+      final parsed = value.toString().trim();
+      if (parsed.isNotEmpty) return parsed;
+    }
+    return fallback;
+  }
+
+  double _readDouble(Map<String, dynamic> raw, List<String> keys, {double fallback = 0}) {
+    for (final key in keys) {
+      final value = raw[key];
+      if (value == null) continue;
+      if (value is num) return value.toDouble();
+      if (value is String) {
+        final normalized = value.replaceAll(',', '').trim();
+        final parsed = double.tryParse(normalized);
+        if (parsed != null) return parsed;
+      }
+    }
+    return fallback;
+  }
+
   Claim _claimFromApi(Map<String, dynamic> raw) {
+    final id = _readString(raw, const ['id', 'claimId', 'claim_id']);
+    final normalizedId = id.isEmpty
+        ? ''
+        : (id.startsWith('#') ? id : '#$id');
+
     return Claim(
-      id: (raw['id'] as String? ?? '').trim(),
-      type: _claimTypeFromApi((raw['claimType'] as String? ?? '').trim()),
-      status: _claimStatusFromApi((raw['status'] as String? ?? '').trim()),
-      amount: (raw['amount'] as num? ?? 0).toDouble(),
-      date: DateTime.tryParse((raw['date'] as String? ?? '').trim()) ?? DateTime.now(),
-      description: (raw['description'] as String? ?? '').trim(),
+      id: normalizedId,
+      type: _claimTypeFromApi(_readString(raw, const ['claimType', 'claim_type'])),
+      status: _claimStatusFromApi(_readString(raw, const ['status'])),
+      amount: _readDouble(raw, const ['amount', 'payoutAmount', 'payout_amount']),
+      date: DateTime.tryParse(_readString(raw, const ['date', 'createdAt', 'created_at'])) ?? DateTime.now(),
+      description: _readString(raw, const ['description']),
     );
   }
 
   /// GET /claims
   Future<List<Claim>> getClaims(String userId) async {
+    await _ensureSessionInitialized();
     if (_accessToken == null) {
       throw Exception('Authentication required. Please verify OTP first.');
     }
@@ -541,6 +591,7 @@ class ApiService {
     required ClaimType type,
     required String description,
   }) async {
+    await _ensureSessionInitialized();
     if (_accessToken == null) {
       throw Exception('Authentication required. Please verify OTP first.');
     }
@@ -575,6 +626,7 @@ class ApiService {
 
   /// GET /workers/me
   Future<User> getProfile(String userId) async {
+    await _ensureSessionInitialized();
     if (_accessToken == null) {
       throw Exception('Authentication required. Please verify OTP first.');
     }
@@ -599,6 +651,7 @@ class ApiService {
   }
 
   Future<WorkerStatus> getWorkerStatus() async {
+    await _ensureSessionInitialized();
     if (_accessToken == null) {
       return const WorkerStatus(phone: '', exists: false, worker: null);
     }
@@ -649,6 +702,7 @@ class ApiService {
 
   /// GET /triggers/active?zone={zone}
   Future<Map<String, dynamic>> getActiveTriggers(String zone) async {
+    await _ensureSessionInitialized();
     if (_accessToken == null) {
       throw Exception('Authentication required. Please verify OTP first.');
     }

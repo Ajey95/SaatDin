@@ -103,7 +103,7 @@ class Claim {
       case ClaimStatus.inReview:
         return const Color(0xFF3B82F6);
       case ClaimStatus.settled:
-        return const Color(0xFF10B981);
+        return const Color(0xFF13B8AA);
       case ClaimStatus.rejected:
         return const Color(0xFFEF4444);
     }
