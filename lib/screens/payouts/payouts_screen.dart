@@ -4,7 +4,6 @@ import 'package:intl/intl.dart';
 
 import '../../theme/app_colors.dart';
 import '../../models/user_model.dart';
-import '../../models/claim_model.dart';
 import '../../services/api_service.dart';
 import '../../services/tab_router.dart';
 
@@ -41,44 +40,79 @@ class _PayoutsScreenState extends State<PayoutsScreen> {
   Future<void> _loadPayoutData() async {
     setState(() => _isLoading = true);
 
+    User user = const User.empty();
+    Map<String, dynamic> policy = <String, dynamic>{};
+    Map<String, dynamic> dashboard = <String, dynamic>{};
+    final loadIssues = <String>[];
+
     try {
-      final user = await _apiService.getProfile('me');
-      final policy = await _apiService.getPolicy('me');
-      final claims = await _apiService.getClaims('me');
-
-      final settled = claims.where((c) => c.status == ClaimStatus.settled).toList()
-        ..sort((a, b) => b.date.compareTo(a.date));
-
-      final payouts = settled
-          .map(
-            (c) => _PayoutEntry(
-              date: c.date,
-              triggerType: _coerceString(c.typeShortName, fallback: 'Unknown trigger'),
-              triggerRawType: _coerceString(c.type.name),
-              amount: c.amount.round(),
-              upiRef: _coerceString(c.id).replaceAll('#', ''),
-            ),
-          )
-          .toList();
-
-      if (!mounted) return;
-      setState(() {
-        _user = user;
-        _policy = policy;
-        _payouts = payouts;
-        final phone = _coerceString(user.phone);
-        _primaryUpi = phone.isEmpty ? '' : '$phone@saatdin';
-        _backupUpi = null;
-        _lastUpdated = DateTime.now();
-      });
+      user = await _apiService.getProfile('me');
     } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to load payouts from backend.')),
-        );
+      loadIssues.add('profile');
+      try {
+        final status = await _apiService.getWorkerStatus();
+        user = status.worker ?? User.empty(phone: status.phone);
+      } catch (_) {
+        user = const User.empty();
       }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+    }
+
+    try {
+      policy = await _apiService.getPolicy('me');
+    } catch (_) {
+      loadIssues.add('policy');
+      policy = <String, dynamic>{};
+    }
+
+    try {
+      dashboard = await _apiService.getPayoutDashboard();
+    } catch (_) {
+      loadIssues.add('payouts');
+      dashboard = <String, dynamic>{};
+    }
+
+    final transfers = (dashboard['transfers'] as List<dynamic>? ?? const <dynamic>[])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+
+    final payouts = transfers
+        .map(
+          (item) => _PayoutEntry(
+            date: DateTime.tryParse(_coerceString(item['createdAt'])) ?? DateTime.now(),
+            triggerType: _coerceString(item['note'], fallback: 'Claim payout'),
+            triggerRawType: _coerceString(item['provider'], fallback: 'payout'),
+            amount: (item['amount'] as num?)?.round() ?? 0,
+            upiRef: _coerceString(item['providerPayoutId'], fallback: _coerceString(item['id'])),
+          ),
+        )
+        .toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+
+    if (!mounted) return;
+    setState(() {
+      _user = user;
+      _policy = policy;
+      _payouts = payouts;
+      _primaryUpi = _coerceString(dashboard['primaryUpi']);
+      _backupUpi = _coerceString(dashboard['backupUpi']).isEmpty
+          ? null
+          : _coerceString(dashboard['backupUpi']);
+      _primaryVerified = dashboard['primaryVerified'] == true;
+      _backupVerified = dashboard['backupVerified'] == true;
+      _lastUpdated = DateTime.now();
+      _isLoading = false;
+    });
+
+    if (loadIssues.isNotEmpty && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            loadIssues.length == 1
+                ? 'Failed to load ${loadIssues.first} from backend.'
+                : 'Some payout details could not be refreshed.',
+          ),
+        ),
+      );
     }
   }
 
@@ -792,7 +826,7 @@ class _PayoutsScreenState extends State<PayoutsScreen> {
                 _primaryVerified = false;
               }),
             ),
-            onVerify: _primaryVerified ? null : _verifyPrimary,
+            onVerify: _primaryVerified ? null : () { _verifyPrimary(); },
           ),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 14),
@@ -813,7 +847,7 @@ class _PayoutsScreenState extends State<PayoutsScreen> {
                 _backupVerified = false;
               }),
             ),
-            onVerify: _backupUpi == null ? null : _verifyBackup,
+            onVerify: _backupUpi == null ? null : () { _verifyBackup(); },
           ),
         ],
       ),
@@ -1009,7 +1043,7 @@ class _PayoutsScreenState extends State<PayoutsScreen> {
                 child: _statementButton(
                   icon: Icons.download_outlined,
                   label: 'This month',
-                  onTap: () => _showSimpleInfo('Monthly PDF statement generated'),
+                  onTap: _showCurrentMonthStatement,
                 ),
               ),
               const SizedBox(width: 10),
@@ -1370,9 +1404,24 @@ class _PayoutsScreenState extends State<PayoutsScreen> {
                       );
                       return;
                     }
-                    onSaved(value);
-                    Navigator.pop(sheetContext);
-                    _showSimpleInfo('UPI updated successfully');
+                    final isPrimary = title.toLowerCase().contains('primary');
+                    _apiService
+                        .updatePayoutAccount(
+                          slot: isPrimary ? 'primary' : 'backup',
+                          upiId: value,
+                        )
+                        .then((_) async {
+                      onSaved(value);
+                      Navigator.pop(sheetContext);
+                      await _refreshPayouts();
+                      if (!mounted) return;
+                      _showSimpleInfo('UPI updated successfully');
+                    }).catchError((_) {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Failed to update UPI ID.')),
+                      );
+                    });
                   },
                   child: const Text('Save UPI'),
                 ),
@@ -1386,14 +1435,43 @@ class _PayoutsScreenState extends State<PayoutsScreen> {
     controller.dispose();
   }
 
-  void _verifyPrimary() {
-    setState(() => _primaryVerified = true);
-    _showSimpleInfo('Primary UPI verified');
+  Future<void> _verifyPrimary() async {
+    try {
+      await _apiService.verifyPayoutAccount('primary');
+      await _refreshPayouts();
+      if (!mounted) return;
+      _showSimpleInfo('Primary UPI verified');
+    } catch (_) {
+      if (!mounted) return;
+      _showSimpleInfo('Primary UPI verification failed');
+    }
   }
 
-  void _verifyBackup() {
-    setState(() => _backupVerified = true);
-    _showSimpleInfo('Backup UPI verified');
+  Future<void> _verifyBackup() async {
+    try {
+      await _apiService.verifyPayoutAccount('backup');
+      await _refreshPayouts();
+      if (!mounted) return;
+      _showSimpleInfo('Backup UPI verified');
+    } catch (_) {
+      if (!mounted) return;
+      _showSimpleInfo('Backup UPI verification failed');
+    }
+  }
+
+  Future<void> _showCurrentMonthStatement() async {
+    final now = DateTime.now();
+    try {
+      final statement = await _apiService.getPayoutStatement(
+        startDate: DateTime(now.year, now.month, 1),
+        endDate: now,
+      );
+      if (!mounted) return;
+      await _showStatementSheet(statement);
+    } catch (_) {
+      if (!mounted) return;
+      _showSimpleInfo('Failed to generate monthly statement');
+    }
   }
 
   Future<void> _pickCustomRange(BuildContext context) async {
@@ -1408,9 +1486,48 @@ class _PayoutsScreenState extends State<PayoutsScreen> {
       ),
     );
     if (range == null) return;
-    final from = DateFormat('d MMM').format(range.start);
-    final to = DateFormat('d MMM').format(range.end);
-    _showSimpleInfo('Custom statement generated for $from – $to');
+    try {
+      final statement = await _apiService.getPayoutStatement(
+        startDate: range.start,
+        endDate: range.end,
+      );
+      if (!mounted) return;
+      await _showStatementSheet(statement);
+    } catch (_) {
+      if (!mounted) return;
+      _showSimpleInfo('Failed to generate statement');
+    }
+  }
+
+  Future<void> _showStatementSheet(Map<String, dynamic> statement) {
+    return showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Statement ready',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                "Transfers: ${statement['transferCount']}  Total: Rs ${statement['totalAmount']}",
+              ),
+              const SizedBox(height: 12),
+              SelectableText(
+                _coerceString(statement['csv']),
+                style: const TextStyle(fontSize: 12),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   void _showSimpleInfo(String message) {
@@ -1570,3 +1687,4 @@ class _PayoutsTopBackgroundPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
+

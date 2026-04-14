@@ -83,10 +83,9 @@ class _EscalationSheetBodyState extends State<_EscalationSheetBody>
     try {
       // Escalation is represented as a new claim of the same type with an
       // escalation prefix, hooking into the existing submit endpoint.
-      await _apiService.submitClaim(
-        userId: 'me',
-        type: widget.claim.type,
-        description: '[ESCALATION] Claim ${widget.claim.id}\nReason: $reason',
+      await _apiService.escalateClaim(
+        claimId: widget.claim.id,
+        reason: reason,
       );
 
       if (!mounted) return;
@@ -370,7 +369,7 @@ class _EscalationSheetBodyState extends State<_EscalationSheetBody>
             ),
             const SizedBox(height: 8),
             const Text(
-              'A senior reviewer will assess your claim\nwithin the next 48 hours.',
+              'A reviewer will assess your claim\nwithin the next 2 hours.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,

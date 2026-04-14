@@ -14,7 +14,14 @@ class ProfileScreen extends StatelessWidget {
   static final ApiService _apiService = ApiService();
 
   Future<_ProfileViewData> _loadProfileViewData() async {
-    final user = await _apiService.getProfile('me');
+    User user = const User.empty();
+
+    try {
+      user = await _apiService.getProfile('me');
+    } catch (_) {
+      final status = await _apiService.getWorkerStatus();
+      user = status.worker ?? User.empty(phone: status.phone);
+    }
 
     Map<String, dynamic> policy = <String, dynamic>{};
     List<Claim> claims = const <Claim>[];
@@ -129,37 +136,28 @@ class ProfileScreen extends StatelessWidget {
                       _buildSectionLabel('Preferences'),
                       _buildMenuGroup([
                         _MenuItemData(
-                          icon: Icons.settings_outlined,
-                          iconBg: const Color(0xFFF0F2F0),
-                          iconColor: const Color(0xFF4A5E50),
-                          title: 'Settings',
-                          onTap: () =>
-                              _showSimpleInfo(context, 'Settings panel opened.'),
+                          icon: Icons.payments_outlined,
+                          iconBg: const Color(0xFFE1F5EE),
+                          iconColor: const Color(0xFF0F6E56),
+                          title: 'Payout settings',
+                          subtitle: 'Manage UPI accounts and statements',
+                          onTap: () => _switchToTab(context, 3),
                         ),
                         _MenuItemData(
-                          icon: Icons.dark_mode_outlined,
-                          iconBg: const Color(0xFFF0F2F0),
-                          iconColor: const Color(0xFF4A5E50),
-                          title: 'Theme',
-                          onTap: () =>
-                              _showSimpleInfo(context, 'Theme controls opened.'),
-                        ),
-                        _MenuItemData(
-                          icon: Icons.grid_view_rounded,
-                          iconBg: const Color(0xFFE6F1FB),
-                          iconColor: const Color(0xFF185FA5),
-                          title: 'Advanced tools',
-                          badge: 'Beta',
-                          onTap: () => _showSimpleInfo(
-                              context, 'Advanced tools coming soon.'),
+                          icon: Icons.workspace_premium_outlined,
+                          iconBg: const Color(0xFFFAEEDA),
+                          iconColor: const Color(0xFF854F0B),
+                          title: 'Coverage details',
+                          subtitle: 'Review active policy and trigger protection',
+                          onTap: () => _switchToTab(context, 2),
                         ),
                         _MenuItemData(
                           icon: Icons.info_outline,
                           iconBg: const Color(0xFFE1F5EE),
                           iconColor: const Color(0xFF0F6E56),
-                          title: 'Help and resources',
-                          onTap: () =>
-                              _showSimpleInfo(context, 'Help center opened.'),
+                          title: 'Help and support',
+                          subtitle: 'Contact help and review claim guidance',
+                          onTap: () => _showSupportSheet(context),
                         ),
                       ]),
                       _buildSectionLabel('Account'),
@@ -273,7 +271,7 @@ class ProfileScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 10),
-                  _editButton(context),
+                  _editButton(context, user, contact),
                 ],
               ),
               const SizedBox(height: 16),
@@ -313,10 +311,10 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  Widget _editButton(BuildContext context) {
+  Widget _editButton(BuildContext context, User user, String contact) {
     return InkWell(
       borderRadius: BorderRadius.circular(8),
-      onTap: () => _showSimpleInfo(context, 'Edit profile opened.'),
+      onTap: () => _showProfileDetailsSheet(context, user, contact),
       child: Container(
         padding:
             const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -327,7 +325,7 @@ class ProfileScreen extends StatelessWidget {
               Border.all(color: Colors.white.withValues(alpha: 0.25)),
         ),
         child: const Text(
-          'Edit',
+          'Details',
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w600,
@@ -597,6 +595,82 @@ class ProfileScreen extends StatelessWidget {
               leading: Icon(Icons.shield_outlined),
               title: Text('Security reminder'),
               subtitle: Text('Review device activity once every week'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showProfileDetailsSheet(BuildContext context, User user, String contact) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) {
+        return ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+          children: [
+            const Text(
+              'Profile details',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 12),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.person_outline),
+              title: Text(user.name),
+              subtitle: Text(contact),
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.location_on_outlined),
+              title: Text(user.zone.isEmpty ? 'Zone unavailable' : user.zone),
+              subtitle: Text(user.zonePincode.isEmpty ? 'Pincode unavailable' : user.zonePincode),
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.local_shipping_outlined),
+              title: Text(user.platform.isEmpty ? 'Platform unavailable' : user.platform),
+              subtitle: Text(user.plan.isEmpty ? 'Plan unavailable' : '${user.plan} plan'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showSupportSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) {
+        return ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+          children: const [
+            Text(
+              'Help and support',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+            ),
+            SizedBox(height: 12),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.call_outlined),
+              title: Text('Claims helpline'),
+              subtitle: Text('+91 1800 00 0000'),
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.mail_outline),
+              title: Text('Support email'),
+              subtitle: Text('support@saatdin.in'),
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.rule_folder_outlined),
+              title: Text('Escalation timeline'),
+              subtitle: Text('Manual escalations are reviewed within 2 hours.'),
             ),
           ],
         );

@@ -22,6 +22,8 @@ class _CoverageScreenState extends State<CoverageScreen> {
   User? _user;
   String? _pendingPlanName;
   String? _pendingEffectiveDate;
+  int? _backendCleanStreakWeeks;
+  double? _backendLoyaltyDiscountPercent;
   bool _isLoading = true;
   int _currentTierIndex = 1;
   int _selectedTierIndex = 1;
@@ -96,6 +98,8 @@ class _CoverageScreenState extends State<CoverageScreen> {
         _claims = claims;
         _pendingPlanName = policy['pendingPlan'] as String?;
         _pendingEffectiveDate = policy['pendingEffectiveDate'] as String?;
+        _backendCleanStreakWeeks = (policy['cleanStreakWeeks'] as num?)?.toInt();
+        _backendLoyaltyDiscountPercent = (policy['loyaltyDiscountPercent'] as num?)?.toDouble();
         _currentTierIndex = currentIndex;
         _selectedTierIndex = currentIndex;
         _simulatorIndex = currentIndex;
@@ -691,6 +695,10 @@ class _CoverageScreenState extends State<CoverageScreen> {
   }
 
   int get _cleanStreakWeeks {
+    if (_backendCleanStreakWeeks != null && _backendCleanStreakWeeks! >= 0) {
+      return _backendCleanStreakWeeks!;
+    }
+
     if (_claims.isEmpty) {
       return 6;
     }
@@ -717,6 +725,13 @@ class _CoverageScreenState extends State<CoverageScreen> {
   }
 
   double get _loyaltyDiscountPercent {
+    if (_backendLoyaltyDiscountPercent != null) {
+      final value = _backendLoyaltyDiscountPercent!;
+      if (value >= 0) {
+        return value;
+      }
+    }
+
     if (_cleanStreakWeeks >= 6) return 10;
     if (_cleanStreakWeeks >= 4) return 5;
     return 0;

@@ -65,7 +65,7 @@ class _ClaimsScreenState extends State<ClaimsScreen> {
 
       if (!mounted) return;
       setState(() {
-        _user = user ?? User.getMockUser();
+        _user = user ?? const User.empty();
         _policy = policy ?? <String, dynamic>{};
         _claims = claims;
       });
@@ -76,7 +76,7 @@ class _ClaimsScreenState extends State<ClaimsScreen> {
             content: Text(
               loadIssues.length == 1
                   ? 'Failed to load ${loadIssues.first} from backend.'
-                  : 'Loaded claims view with partial backend data.',
+                  : 'Some claim details could not be refreshed.',
             ),
           ),
         );
@@ -173,7 +173,7 @@ class _ClaimsScreenState extends State<ClaimsScreen> {
     switch (_selectedTab) {
       case 1:
         return _claims
-            .where((c) => c.status == ClaimStatus.inReview)
+            .where((c) => c.status == ClaimStatus.inReview || c.status == ClaimStatus.escalated)
             .toList();
       case 2:
         return _claims
@@ -189,7 +189,9 @@ class _ClaimsScreenState extends State<ClaimsScreen> {
     final user = _user;
     final weeklyPremium = (_policy?['weeklyPremium'] as num? ?? 0).toInt();
     final policyStatus = ((_policy?['status'] as String?) ?? 'active').toUpperCase();
-    final inReviewCount = _claims.where((c) => c.status == ClaimStatus.inReview).length;
+    final inReviewCount = _claims
+        .where((c) => c.status == ClaimStatus.inReview || c.status == ClaimStatus.escalated)
+        .length;
 
     if (_isLoadingClaims) {
       return const Scaffold(
@@ -828,6 +830,7 @@ class _ClaimsScreenState extends State<ClaimsScreen> {
               const SizedBox(height: 20),
               // Escalate button (Issue #9)
               if (claim.status == ClaimStatus.inReview ||
+                  claim.status == ClaimStatus.escalated ||
                   claim.status == ClaimStatus.pending)
                 SizedBox(
                   width: double.infinity,
@@ -852,7 +855,7 @@ class _ClaimsScreenState extends State<ClaimsScreen> {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text(
-                              'Escalation submitted. A senior reviewer will contact you within 48 hrs.'
+                              'Escalation submitted. A reviewer will contact you within 2 hrs.'
                             ),
                           ),
                         );

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-enum ClaimStatus { pending, inReview, settled, rejected }
+enum ClaimStatus { pending, inReview, escalated, settled, rejected }
 
 enum ClaimType { rainLock, aqiGuard, trafficBlock, zoneLock, heatBlock }
 
@@ -89,6 +89,8 @@ class Claim {
         return 'Pending';
       case ClaimStatus.inReview:
         return 'In Review';
+      case ClaimStatus.escalated:
+        return 'Escalated';
       case ClaimStatus.settled:
         return 'Settled';
       case ClaimStatus.rejected:
@@ -102,40 +104,12 @@ class Claim {
         return const Color(0xFFF59E0B);
       case ClaimStatus.inReview:
         return const Color(0xFF3B82F6);
+      case ClaimStatus.escalated:
+        return const Color(0xFF7C3AED);
       case ClaimStatus.settled:
         return const Color(0xFF13B8AA);
       case ClaimStatus.rejected:
         return const Color(0xFFEF4444);
     }
-  }
-
-  static List<Claim> getMockClaims() {
-    return [
-      Claim(
-        id: '#17210',
-        type: ClaimType.trafficBlock,
-        status: ClaimStatus.inReview,
-        amount: 2800,
-        date: DateTime.now().subtract(const Duration(days: 1)),
-        description: 'Minor Collision',
-      ),
-      Claim(
-        id: '#17209',
-        type: ClaimType.rainLock,
-        status: ClaimStatus.settled,
-        amount: 1450,
-        date: DateTime.now().subtract(const Duration(days: 5)),
-        description: 'Weather Damage (Rain)',
-        bankInfo: 'Bank XXXXX42',
-      ),
-      Claim(
-        id: '#17012',
-        type: ClaimType.aqiGuard,
-        status: ClaimStatus.rejected,
-        amount: 5200,
-        date: DateTime.now().subtract(const Duration(days: 15)),
-        description: 'Phone Screen Crack',
-      ),
-    ];
   }
 }

@@ -2,7 +2,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../../models/claim_model.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_colors.dart';
 
@@ -72,9 +71,7 @@ class _ZoneLockReportScreenState extends State<ZoneLockReportScreen>
         'Details: ${_descriptionController.text.trim()}';
 
     try {
-      await _apiService.submitClaim(
-        userId: 'me',
-        type: ClaimType.zoneLock,
+      await _apiService.submitZoneLockReport(
         description: description,
       );
 
@@ -344,7 +341,7 @@ class _ZoneLockReportScreenState extends State<ZoneLockReportScreen>
                   const SizedBox(width: 10),
                   const Expanded(
                     child: Text(
-                      'Reports are reviewed within 24 hours. You will be '
+                      'Reports are reviewed within 2 hours. You will be '
                       'notified once your claim is processed.',
                       style: TextStyle(
                         fontSize: 12,
@@ -428,7 +425,7 @@ class _ZoneLockReportScreenState extends State<ZoneLockReportScreen>
             ),
             const SizedBox(height: 8),
             const Text(
-              'Your ZoneLock report has been received.\nOur team will review it within 24 hours.',
+              'Your ZoneLock report has been received.\nCorroborated reports are auto-confirmed, otherwise review completes within 2 hours.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,

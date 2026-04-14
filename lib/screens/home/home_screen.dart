@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../../theme/app_colors.dart';
 import '../../models/user_model.dart';
@@ -14,9 +15,28 @@ class HomeScreen extends StatelessWidget {
   static final ApiService _apiService = ApiService();
 
   Future<_HomeViewData> _loadHomeViewData() async {
-    final user = await _apiService.getProfile('me');
-    final policy = await _apiService.getPolicy('me');
-    final claims = await _apiService.getClaims('me');
+    User user = const User.empty();
+    Map<String, dynamic> policy = <String, dynamic>{};
+    List<Claim> claims = const <Claim>[];
+
+    try {
+      user = await _apiService.getProfile('me');
+    } catch (_) {
+      user = const User.empty();
+    }
+
+    try {
+      policy = await _apiService.getPolicy('me');
+    } catch (_) {
+      policy = <String, dynamic>{};
+    }
+
+    try {
+      claims = await _apiService.getClaims('me');
+    } catch (_) {
+      claims = const <Claim>[];
+    }
+
     final latestClaim = _latestClaimForUpdates(claims);
     final perTriggerPayout = (policy['perTriggerPayout'] as num? ?? 0).toDouble();
     final zoneKey = (policy['zonePincode'] as String? ?? user.zonePincode).trim();
@@ -564,9 +584,7 @@ class HomeScreen extends StatelessWidget {
                 title: const Text('Settings'),
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Settings screen coming soon.')),
-                  );
+                  _openProfile(context);
                 },
               ),
               ListTile(
@@ -1435,6 +1453,18 @@ class HomeScreen extends StatelessWidget {
   void _openProfile(BuildContext context) => _switchToTab(context, 4);
   void _openPayouts(BuildContext context) => _switchToTab(context, 3);
 
+  Future<void> _copySupportValue(
+    BuildContext context, {
+    required String label,
+    required String value,
+  }) async {
+    await Clipboard.setData(ClipboardData(text: value));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$label copied: $value')),
+    );
+  }
+
   void _switchToTab(BuildContext context, int index) {
     TabRouter.switchTo(index);
     Navigator.of(context).popUntil((route) => route.isFirst);
@@ -1547,8 +1577,10 @@ class HomeScreen extends StatelessWidget {
                   subtitle: const Text('+91 1800 00 0000'),
                   onTap: () {
                     Navigator.pop(sheetContext);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Calling support is coming soon.')),
+                    _copySupportValue(
+                      context,
+                      label: 'Support helpline',
+                      value: '+91 1800 00 0000',
                     );
                   },
                 ),
@@ -1556,11 +1588,13 @@ class HomeScreen extends StatelessWidget {
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.chat_outlined),
                   title: const Text('Chat with us'),
-                  subtitle: const Text('Average wait: under 2 min'),
+                  subtitle: const Text('support@saatdin.in'),
                   onTap: () {
                     Navigator.pop(sheetContext);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Live chat will be available soon.')),
+                    _copySupportValue(
+                      context,
+                      label: 'Support email',
+                      value: 'support@saatdin.in',
                     );
                   },
                 ),

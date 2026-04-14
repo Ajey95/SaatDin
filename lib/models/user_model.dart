@@ -25,6 +25,18 @@ class User {
     this.language = 'English',
   });
 
+  const User.empty({this.phone = ''})
+      : name = 'SaatDin Rider',
+        platform = '',
+        zone = '',
+        zonePincode = '',
+        plan = '',
+        policyId = '',
+        totalEarnings = 0,
+        earningsProtected = 0,
+        isVerified = false,
+        language = 'English';
+
   static String _readString(Map<String, dynamic> json, List<String> keys) {
     for (final key in keys) {
       final value = json[key];
@@ -81,21 +93,5 @@ class User {
       'isVerified': isVerified,
       'language': language,
     };
-  }
-
-  static User getMockUser() {
-    return const User(
-      name: 'Arjun Singh',
-      phone: '98765 43210',
-      platform: 'Blinkit',
-      zone: 'Bellandur',
-      zonePincode: '560103',
-      plan: 'Standard',
-      policyId: 'SR-9921',
-      totalEarnings: 42850.00,
-      earningsProtected: 1240.50,
-      isVerified: true,
-      language: 'English',
-    );
   }
 }

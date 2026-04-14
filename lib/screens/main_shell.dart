@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
+import '../../services/signal_capture_service.dart';
 import '../../services/tab_router.dart';
 import 'home/home_screen.dart';
 import 'claims/claims_screen.dart';
@@ -23,11 +26,13 @@ class _MainShellState extends State<MainShell> {
     TabRouter.resetToHome();
     _currentIndex = TabRouter.tabIndex.value;
     TabRouter.tabIndex.addListener(_handleExternalTabChange);
+    unawaited(SignalCaptureService.instance.start());
   }
 
   @override
   void dispose() {
     TabRouter.tabIndex.removeListener(_handleExternalTabChange);
+    unawaited(SignalCaptureService.instance.stop());
     super.dispose();
   }
 

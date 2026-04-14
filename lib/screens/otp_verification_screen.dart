@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:sms_autofill/sms_autofill.dart';
 
 import '../routes/app_routes.dart';
 import '../services/api_service.dart';
@@ -15,7 +16,8 @@ class OtpVerificationScreen extends StatefulWidget {
   State<OtpVerificationScreen> createState() => _OtpVerificationScreenState();
 }
 
-class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
+class _OtpVerificationScreenState extends State<OtpVerificationScreen>
+    with CodeAutoFill {
   static const int _otpLength = 6;
   static const Color _verifyColor = AppColors.primary;
 
@@ -42,12 +44,38 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     });
     _startCodeExpiryCountdown();
     _startResendCountdown();
+    _startOtpAutoFillListener();
+  }
+
+  Future<void> _startOtpAutoFillListener() async {
+    try {
+      listenForCode();
+    } catch (_) {
+      // Ignore if listener is unavailable on this platform/device.
+    }
+  }
+
+  @override
+  void codeUpdated() {
+    final detected = code?.trim() ?? '';
+    if (detected.isEmpty) return;
+    final digitsOnly = detected.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digitsOnly.isEmpty) return;
+    final capped = digitsOnly.length > _otpLength
+        ? digitsOnly.substring(0, _otpLength)
+        : digitsOnly;
+    _otpController.text = capped;
+    _otpController.selection = TextSelection.collapsed(offset: capped.length);
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   @override
   void dispose() {
     _resendTimer?.cancel();
     _codeExpiryTimer?.cancel();
+    cancel();
     _otpController.dispose();
     _otpFocusNode.dispose();
     super.dispose();
@@ -162,8 +190,10 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 
     if (ok) {
       _startResendCountdown();
+      _startOtpAutoFillListener();
     }
 
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -227,22 +257,32 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
           Positioned.fill(
             child: Opacity(
               opacity: 0.01,
-              child: TextField(
-                controller: _otpController,
-                focusNode: _otpFocusNode,
-                autofocus: true,
-                keyboardType: TextInputType.number,
-                textInputAction: TextInputAction.done,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                maxLength: _otpLength,
-                autofillHints: const [AutofillHints.oneTimeCode],
-                showCursor: false,
-                decoration: const InputDecoration(
-                  counterText: '',
-                  border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                  contentPadding: EdgeInsets.zero,
+              child: AutofillGroup(
+                child: TextField(
+                  controller: _otpController,
+                  focusNode: _otpFocusNode,
+                  autofocus: true,
+                  keyboardType: TextInputType.number,
+                  textInputAction: TextInputAction.done,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  maxLength: _otpLength,
+                  autofillHints: const [AutofillHints.oneTimeCode],
+                  showCursor: false,
+                  onChanged: (value) {
+                    if (value.length > _otpLength) {
+                      _otpController.text = value.substring(0, _otpLength);
+                      _otpController.selection = TextSelection.collapsed(
+                        offset: _otpController.text.length,
+                      );
+                    }
+                  },
+                  decoration: const InputDecoration(
+                    counterText: '',
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    contentPadding: EdgeInsets.zero,
+                  ),
                 ),
               ),
             ),
