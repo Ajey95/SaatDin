@@ -12,6 +12,7 @@ from ..core.config import settings
 from ..core.db import (
     create_fraud_cluster_run,
     finalize_fraud_cluster_run,
+    list_existing_fraud_co_claim_cluster_keys,
     list_claim_events_since,
     save_fraud_co_claim_clusters,
 )
@@ -78,6 +79,18 @@ def _frequency_score(co_claim_count: int, min_edge_support: int) -> float:
 def _cluster_key(members: Iterable[str]) -> str:
     material = "|".join(sorted(members))
     return hashlib.sha256(material.encode("utf-8")).hexdigest()[:16]
+
+
+def _dedupe_clusters_by_key(clusters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for cluster in clusters:
+        key = str(cluster.get("cluster_key", "")).strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(cluster)
+    return out
 
 
 def _build_edges(
@@ -312,30 +325,45 @@ async def generate_co_claim_clusters_snapshot() -> Dict[str, Any]:
         since = datetime.now(timezone.utc) - timedelta(days=int(settings.co_claim_graph_lookback_days))
         rows = await list_claim_events_since(since)
         result = compute_co_claim_clusters(claims=rows)
-        persisted = await save_fraud_co_claim_clusters(run_id, result["clusters"])
+        clusters = _dedupe_clusters_by_key(list(result.get("clusters", [])))
+        existing_keys = await list_existing_fraud_co_claim_cluster_keys(
+            [str(cluster.get("cluster_key", "")) for cluster in clusters]
+        )
+        new_clusters = [
+            cluster
+            for cluster in clusters
+            if str(cluster.get("cluster_key", "")).strip() not in existing_keys
+        ]
+        persisted = await save_fraud_co_claim_clusters(run_id, new_clusters)
+        persisted_flagged = [
+            cluster for cluster in new_clusters if str(cluster.get("risk_level", "")).lower() in {"medium", "high"}
+        ]
+        deduped_count = max(0, len(clusters) - len(new_clusters))
         await finalize_fraud_cluster_run(
             run_id,
             status="completed",
             claims_scanned=int(result["claims_scanned"]),
             edge_count=int(result["edge_count"]),
-            cluster_count=int(result["cluster_count"]),
-            flagged_cluster_count=int(result["flagged_cluster_count"]),
+            cluster_count=int(persisted),
+            flagged_cluster_count=int(len(persisted_flagged)),
         )
         logger.info(
-            "co_claim_cluster_run_completed run_id=%s claims_scanned=%s edges=%s clusters=%s flagged=%s",
+            "co_claim_cluster_run_completed run_id=%s claims_scanned=%s edges=%s clusters=%s flagged=%s deduped=%s",
             run_id,
             result["claims_scanned"],
             result["edge_count"],
             persisted,
-            result["flagged_cluster_count"],
+            len(persisted_flagged),
+            deduped_count,
         )
         return {
             "status": "completed",
             "run_id": run_id,
             "claims_scanned": int(result["claims_scanned"]),
             "edge_count": int(result["edge_count"]),
-            "cluster_count": int(result["cluster_count"]),
-            "flagged_cluster_count": int(result["flagged_cluster_count"]),
+            "cluster_count": int(persisted),
+            "flagged_cluster_count": int(len(persisted_flagged)),
+            "deduped_cluster_count": int(deduped_count),
         }
     except Exception as exc:
         logger.exception("co_claim_cluster_run_failed run_id=%s error=%s", run_id, exc)
