@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 from collections import defaultdict
@@ -12,12 +13,15 @@ from ..core.config import settings
 from ..core.db import (
     count_claims_for_phone_since,
     count_recent_zone_claims_window,
+    count_settled_claim_days_for_phone_since,
     create_claim,
     create_trigger_signal_reading,
+    get_worker_location_signal,
     get_worker_created_at,
     has_recent_auto_claim,
     list_trigger_signal_readings,
     list_workers_by_zone,
+    upsert_worker_location_signal,
     update_claim_status,
 )
 from ..core.zone_cache import load_zone_map, resolve_zone
@@ -35,7 +39,6 @@ logger = logging.getLogger(__name__)
 _live_trigger_state: Dict[str, Dict[str, Any]] = {}
 _device_fingerprints: Dict[str, str] = {}
 _fraud_ring_clusters: Dict[str, set[str]] = defaultdict(set)
-_worker_gps_cache: Dict[str, Dict[str, Any]] = {}
 
 _TRIGGER_PAYOUT_FACTORS = {
     "rain": 1.00,
@@ -44,6 +47,11 @@ _TRIGGER_PAYOUT_FACTORS = {
     "zonelock": 1.00,
     "heat": 0.60,
 }
+
+
+def _current_week_start_utc() -> datetime:
+    now = datetime.now(timezone.utc)
+    return (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
 
 
 def _claim_type_to_alert_key(claim_type: str) -> str:
@@ -83,6 +91,19 @@ def _required_samples(window_hours: int) -> int:
     expected = max(1, int((window_hours * 60) / poll_minutes))
     slack = max(0, int(settings.trigger_window_sample_slack))
     return max(1, expected - slack)
+
+
+def _select_worker_plan(plans: list[Any], worker_plan_name: str) -> Optional[Any]:
+    if not plans:
+        return None
+    selected = next(
+        (plan for plan in plans if str(plan.name).lower() == worker_plan_name.lower()),
+        None,
+    )
+    if selected is not None:
+        return selected
+    # Prefer standard/default middle tier when available.
+    return plans[1] if len(plans) > 1 else plans[0]
 
 
 async def _store_and_window_readings(
@@ -145,7 +166,11 @@ async def _build_anomaly_features(
     fraud_ring: Optional[set[str]] = None,
 ) -> Dict[str, Any]:
     zone_lat, zone_lon = _zone_center_coordinates(zone)
-    zone_affinity_score = zone_affinity if zone_affinity is not None else calculate_zone_affinity_score(phone, zone_lat, zone_lon)
+    zone_affinity_score = (
+        zone_affinity
+        if zone_affinity is not None
+        else await calculate_zone_affinity_score(phone, zone_lat, zone_lon)
+    )
     fraud_ring_members = fraud_ring if fraud_ring is not None else get_fraud_ring_members(phone)
     recent_claims_24h = await count_claims_for_phone_since(
         phone,
@@ -203,12 +228,12 @@ async def force_trigger_for_zone(
         platform = _platform_from_display(str(worker["platform_name"]))
         zone_multiplier = float(zone.get("zone_risk_multiplier", 1.0))
         plans = build_plans(zone_multiplier, platform, zone_data=zone)
-        selected = next(
-            (plan for plan in plans if plan.name.lower() == str(worker["plan_name"]).lower()),
-            plans[1],
-        )
+        selected = _select_worker_plan(plans, str(worker["plan_name"]))
+        if selected is None:
+            logger.warning("auto_claim_skipped_no_plans phone=%s claim_type=%s", phone, claim_type)
+            continue
         payout = float(selected.perTriggerPayout) * _TRIGGER_PAYOUT_FACTORS.get(alert_type, 0.7)
-        zone_affinity = calculate_zone_affinity_score(phone, zone_lat, zone_lon)
+        zone_affinity = await calculate_zone_affinity_score(phone, zone_lat, zone_lon)
         fraud_ring = get_fraud_ring_members(phone)
         anomaly_features = await _build_anomaly_features(
             phone=phone,
@@ -315,18 +340,30 @@ def register_device_fingerprint(phone: str, device_id: str, app_version: str, os
 
 
 def update_worker_gps(phone: str, latitude: float, longitude: float) -> None:
-    _worker_gps_cache[phone] = {
-        "latitude": latitude,
-        "longitude": longitude,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
+    # Keep a sync API for existing call sites while persisting data asynchronously.
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    loop.create_task(
+        upsert_worker_location_signal(
+            phone=phone,
+            latitude=latitude,
+            longitude=longitude,
+            captured_at=datetime.now(timezone.utc),
+        )
+    )
 
 
-def calculate_zone_affinity_score(phone: str, zone_center_lat: float, zone_center_lon: float) -> float:
-    if phone not in _worker_gps_cache:
+async def calculate_zone_affinity_score(phone: str, zone_center_lat: float, zone_center_lon: float) -> float:
+    gps = await get_worker_location_signal(phone)
+    if not gps:
         return 0.5
-    gps = _worker_gps_cache[phone]
-    lat1, lon1 = gps["latitude"], gps["longitude"]
+    lat_raw = gps.get("latitude")
+    lon_raw = gps.get("longitude")
+    if lat_raw is None or lon_raw is None:
+        return 0.5
+    lat1, lon1 = float(lat_raw), float(lon_raw)
     lat2, lon2 = zone_center_lat, zone_center_lon
     dx = (lon2 - lon1) * 111 * 1000 * 0.9
     dy = (lat2 - lat1) * 111 * 1000
@@ -581,7 +618,7 @@ async def refresh_live_trigger_state() -> None:
 
         for worker in workers:
             phone = str(worker["phone"])
-            zone_affinity = calculate_zone_affinity_score(phone, zone_lat, zone_lon)
+            zone_affinity = await calculate_zone_affinity_score(phone, zone_lat, zone_lon)
             fraud_ring = get_fraud_ring_members(phone)
             if zone_affinity < 0.25:
                 logger.info(
@@ -629,10 +666,13 @@ async def refresh_live_trigger_state() -> None:
             platform = _platform_from_display(str(worker["platform_name"]))
             zone_multiplier = float(zone.get("zone_risk_multiplier", 1.0))
             plans = build_plans(zone_multiplier, platform, zone_data=zone)
-            selected = next(
-                (plan for plan in plans if plan.name.lower() == str(worker["plan_name"]).lower()),
-                plans[1],
-            )
+            selected = _select_worker_plan(plans, str(worker["plan_name"]))
+            if selected is None:
+                logger.warning("auto_claim_skipped_no_plans phone=%s claim_type=%s", phone, claim_type)
+                continue
+            weekly_cap_start = _current_week_start_utc()
+            settled_days_this_week = await count_settled_claim_days_for_phone_since(phone, weekly_cap_start)
+            weekly_cap_reached = settled_days_this_week >= max(1, int(selected.maxDaysPerWeek))
             payout = float(selected.perTriggerPayout) * _TRIGGER_PAYOUT_FACTORS.get(alert_type, 0.7)
             anomaly_features = await _build_anomaly_features(
                 phone=phone,
@@ -648,9 +688,24 @@ async def refresh_live_trigger_state() -> None:
                 anomaly_features,
                 context={"phone": phone, "claim_type": claim_type, "source": "auto"},
             )
-            # Force in_review if velocity spike detected OR new account hold
-            if velocity_spike or new_account_held:
+            review_notes = None
+            # Hold rather than settle when the weekly coverage cap or other risk controls apply.
+            if weekly_cap_reached or velocity_spike or new_account_held:
                 claim_status = "in_review"
+                if weekly_cap_reached:
+                    review_notes = (
+                        f"Weekly coverage cap reached for plan {selected.name} "
+                        f"({selected.maxDaysPerWeek} covered days/week)."
+                    )
+                elif velocity_spike:
+                    review_notes = (
+                        f"Auto claims held for review due to recent zone velocity spike: "
+                        f"{recent_zone_claim_count} claims in {settings.claim_velocity_spike_window_minutes} minutes."
+                    )
+                elif new_account_held:
+                    review_notes = (
+                        f"Auto claims held for review due to new account hold: age < {settings.new_account_hold_days} days."
+                    )
             else:
                 claim_status = "in_review" if bool(anomaly["anomaly_flagged"]) else "settled"
             claim_row = await create_claim(
@@ -661,6 +716,8 @@ async def refresh_live_trigger_state() -> None:
                 description=f"Auto-settled: {state['alertTitle']}. Data source: {state.get('dataSource', 'unknown')}.",
                 zone_pincode=pincode,
                 source="auto",
+                review_notes=review_notes,
+                reviewed_by="system" if review_notes else None,
                 anomaly_score=float(anomaly["anomaly_score"]),
                 anomaly_threshold=float(anomaly["anomaly_threshold"]),
                 anomaly_flagged=bool(anomaly["anomaly_flagged"]),

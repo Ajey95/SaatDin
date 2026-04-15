@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from ..core.config import settings
 from ..core.db import (
+    count_settled_claim_days_for_phone_since,
     create_payout_transfer,
     get_payout_transfer,
     get_worker,
@@ -14,6 +15,9 @@ from ..core.db import (
     set_claim_payout_transfer,
     upsert_worker_payout_accounts,
 )
+from ..core.zone_cache import resolve_zone
+from ..models.platform import Platform
+from .premium import build_plans
 
 _UPI_PATTERN = re.compile(r"^[a-zA-Z0-9.\-_]{2,}@[a-zA-Z]{2,}$")
 
@@ -64,6 +68,20 @@ def _provider_label() -> str:
     if settings.razorpay_key_id and settings.razorpay_key_secret:
         return "razorpay-sandbox"
     return "razorpay-sandbox-local"
+
+
+def _current_week_start_utc(value: datetime) -> datetime:
+    utc_value = value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return (utc_value - timedelta(days=utc_value.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _selected_plan_for_worker(worker: Dict[str, Any]) -> Any:
+    platform = Platform.from_input(str(worker.get("platform_name") or "swiggy_instamart"))
+    zone_key = str(worker.get("zone_pincode") or worker.get("zone_name") or "560001")
+    _, zone_data = resolve_zone(zone_key)
+    plans = build_plans(float(zone_data.get("zone_risk_multiplier", 1.0)), platform, zone_data=zone_data)
+    selected = next((plan for plan in plans if plan.name.lower() == str(worker.get("plan_name") or "").lower()), None)
+    return selected or plans[1]
 
 
 async def get_worker_payout_dashboard(phone: str) -> Dict[str, Any]:
@@ -152,6 +170,17 @@ async def initiate_claim_payout(
     upi_id = _preferred_upi(worker)
     if not upi_id or not validate_upi_id(upi_id):
         raise ValueError("No valid payout UPI is configured for the worker")
+
+    selected = _selected_plan_for_worker(worker)
+    claim_created_at = datetime.fromisoformat(str(claim.get("created_at")))
+    if claim_created_at.tzinfo is None:
+        claim_created_at = claim_created_at.replace(tzinfo=timezone.utc)
+    week_start = _current_week_start_utc(claim_created_at)
+    settled_days_this_week = await count_settled_claim_days_for_phone_since(str(worker["phone"]), week_start)
+    if settled_days_this_week >= max(1, int(selected.maxDaysPerWeek)):
+        raise ValueError(
+            f"Weekly coverage cap reached for plan {selected.name} ({selected.maxDaysPerWeek} covered days/week)"
+        )
 
     created_at = datetime.now(timezone.utc)
     provider_payout_id = f"rp_{claim['id']}_{int(created_at.timestamp())}"

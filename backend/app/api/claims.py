@@ -3,16 +3,26 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timedelta, timezone
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Path
 
-from ..core.db import count_claims_for_phone_since, create_claim, list_claims_for_phone, escalate_claim, get_claim
+from ..core.db import (
+    count_claims_for_phone_since,
+    count_settled_claim_days_for_phone_since,
+    create_claim,
+    list_claims_for_phone,
+    escalate_claim,
+    get_claim,
+)
 from ..core.dependencies import get_current_worker
 from ..core.zone_cache import resolve_zone
+from ..models.platform import Platform
 from ..models.schemas import ApiResponse, ClaimOut, ClaimSubmitRequest, ClaimEscalateRequest, ClaimEscalationOut
 from ..services.fraud_isolation import score_claim
 from ..services.gps_validation import evaluate_worker_gps_signal, gps_features_from_validation
 from ..services.motion_validation import evaluate_worker_motion_signal, motion_features_from_validation
+from ..services.premium import build_plans
 from ..services.tower_validation import evaluate_worker_tower_signal, tower_features_from_validation
 from ..services.trigger_monitor import calculate_zone_affinity_score, get_fraud_ring_members
 
@@ -35,6 +45,71 @@ _MANUAL_PAYOUT = {
     "ZoneLock": 400.0,
     "HeatBlock": 240.0,
 }
+
+_TRIGGER_PAYOUT_FACTORS = {
+    "rain": 1.00,
+    "aqi": 0.80,
+    "traffic": 0.70,
+    "zonelock": 1.00,
+    "heat": 0.60,
+}
+
+
+def _claim_type_to_alert_key(claim_type: str) -> str:
+    normalized = claim_type.strip().lower().replace(" ", "").replace("_", "")
+    mapping = {
+        "rain": "rain",
+        "rainlock": "rain",
+        "aqi": "aqi",
+        "aqiguard": "aqi",
+        "traffic": "traffic",
+        "trafficblock": "traffic",
+        "zonelock": "zonelock",
+        "heat": "heat",
+        "heatblock": "heat",
+    }
+    return mapping.get(normalized, normalized)
+
+
+def _resolve_worker_plan(worker: dict) -> Optional[Any]:
+    try:
+        zone_pincode = str(worker.get("zone_pincode", ""))
+        _, zone_data = resolve_zone(zone_pincode)
+        zone_multiplier = float(zone_data.get("zone_risk_multiplier", 1.0))
+        platform = Platform.from_input(str(worker.get("platform_name", "swiggy_instamart")))
+        plans = build_plans(zone_multiplier, platform, zone_data=zone_data)
+        if not plans:
+            return None
+        worker_plan_name = str(worker.get("plan_name", "")).strip().lower()
+        selected = next((plan for plan in plans if plan.name.lower() == worker_plan_name), None)
+        return selected if selected is not None else (plans[1] if len(plans) > 1 else plans[0])
+    except Exception:
+        return None
+
+
+def _current_week_start_utc(now: Optional[datetime] = None) -> datetime:
+    now = now or datetime.now(timezone.utc)
+    week_start = now - timedelta(days=now.weekday())
+    return week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _manual_claim_amount_for_worker(worker: dict, claim_type: str, selected_plan: Optional[Any] = None) -> float:
+    fallback_amount = float(_MANUAL_PAYOUT.get(claim_type, 250.0))
+    try:
+        selected = selected_plan or _resolve_worker_plan(worker)
+        if selected is None:
+            return fallback_amount
+
+        factor = _TRIGGER_PAYOUT_FACTORS.get(_claim_type_to_alert_key(claim_type), 0.7)
+        return round(float(selected.perTriggerPayout) * factor, 2)
+    except Exception as exc:
+        logger.warning(
+            "manual_claim_amount_fallback phone=%s claim_type=%s reason=%s",
+            str(worker.get("phone", "unknown")),
+            claim_type,
+            str(exc),
+        )
+        return fallback_amount
 
 
 def _normalize_claim_type(raw: str) -> str:
@@ -123,7 +198,7 @@ async def _build_manual_claim_features(worker: dict, amount: float) -> dict:
     coords = zone_data.get("coordinates_approx", {})
     zone_lat = float(zone_data.get("latitude", coords.get("lat", 12.97)))
     zone_lon = float(zone_data.get("longitude", coords.get("lon", 77.59)))
-    zone_affinity = calculate_zone_affinity_score(phone, zone_lat, zone_lon)
+    zone_affinity = await calculate_zone_affinity_score(phone, zone_lat, zone_lon)
     fraud_ring_size = len(get_fraud_ring_members(phone))
     recent_claims_24h = await count_claims_for_phone_since(
         phone,
@@ -167,8 +242,24 @@ async def get_my_claims(worker: dict = Depends(get_current_worker)) -> ApiRespon
 @router.post("/submit", response_model=ApiResponse, status_code=status.HTTP_201_CREATED)
 async def submit_claim(payload: ClaimSubmitRequest, worker: dict = Depends(get_current_worker)) -> ApiResponse:
     claim_type = _normalize_claim_type(payload.claimType)
-    amount = _MANUAL_PAYOUT.get(claim_type, 250.0)
     phone = str(worker["phone"])
+    selected_plan = _resolve_worker_plan(worker)
+    max_days_per_week = max(1, int(getattr(selected_plan, "maxDaysPerWeek", 1)))
+    settled_days_this_week = await count_settled_claim_days_for_phone_since(
+        phone,
+        _current_week_start_utc(),
+    )
+    if settled_days_this_week >= max_days_per_week:
+        active_plan_name = str(getattr(selected_plan, "name", worker.get("plan_name", "Current")))
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Weekly coverage cap reached for plan {active_plan_name} "
+                f"({max_days_per_week} covered days/week)."
+            ),
+        )
+
+    amount = _manual_claim_amount_for_worker(worker, claim_type, selected_plan=selected_plan)
     anomaly_features = await _build_manual_claim_features(worker, amount)
     anomaly = score_claim(
         anomaly_features,
