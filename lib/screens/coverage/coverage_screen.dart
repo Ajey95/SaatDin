@@ -5,6 +5,7 @@ import '../../models/claim_model.dart';
 import '../../models/plan_model.dart';
 import '../../models/user_model.dart';
 import '../../services/api_service.dart';
+import '../../services/policy_document_opener.dart';
 import '../../services/tab_router.dart';
 import '../../theme/app_colors.dart';
 
@@ -16,6 +17,9 @@ class CoverageScreen extends StatefulWidget {
 }
 
 class _CoverageScreenState extends State<CoverageScreen> {
+  static const String _policyDocumentAssetPath =
+      'assets/documents/SaatDin Policy Document.pdf';
+
   final ApiService _apiService = ApiService();
   List<InsurancePlan> _plans = const <InsurancePlan>[];
   List<Claim> _claims = const <Claim>[];
@@ -475,15 +479,13 @@ class _CoverageScreenState extends State<CoverageScreen> {
                       .toList(),
                 ),
               ),
-              const SizedBox(height: 20),
-              const _CoverageSectionHeader('Policy Document'),
               const SizedBox(height: 10),
               _buildCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Covered: income loss due to verified RainLock, AQI Guard, TrafficBlock, ZoneLock, and HeatBlock events in your registered zone.',
+                      'For complete terms and conditions, please refer to the policy document.',
                       style: TextStyle(
                         fontSize: 13,
                         color: AppColors.textSecondary,
@@ -491,35 +493,13 @@ class _CoverageScreenState extends State<CoverageScreen> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    const Text(
-                      'Not covered: health, life, personal injury, and vehicle repair costs.',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: AppColors.textSecondary,
-                        height: 1.4,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Policy summary PDF download started.'),
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.download_outlined, size: 18),
-                      label: const Text('Download PDF Summary'),
-                      style: OutlinedButton.styleFrom(
+                    TextButton.icon(
+                      onPressed: _openPolicyDocument,
+                      icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+                      label: const Text('View policy document'),
+                      style: TextButton.styleFrom(
                         foregroundColor: AppColors.primary,
-                        side: const BorderSide(color: AppColors.border),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 10,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 4),
                       ),
                     ),
                   ],
@@ -623,6 +603,23 @@ class _CoverageScreenState extends State<CoverageScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _openPolicyDocument() async {
+    final opened = await openPolicyDocument(
+      context,
+      assetPath: _policyDocumentAssetPath,
+    );
+
+    if (!mounted) return;
+
+    if (!opened) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to open policy document right now.'),
+        ),
+      );
+    }
   }
 
   Widget _buildTopUtilityButtons(User user) {
