@@ -13,13 +13,46 @@ class InsurancePlan {
     this.isPopular = false,
   });
 
+  static String _readString(Map<String, dynamic> json, List<String> keys) {
+    for (final key in keys) {
+      final value = json[key];
+      if (value == null) continue;
+      final parsed = value.toString().trim();
+      if (parsed.isNotEmpty) return parsed;
+    }
+    return '';
+  }
+
+  static int _readInt(Map<String, dynamic> json, List<String> keys) {
+    for (final key in keys) {
+      final value = json[key];
+      if (value == null) continue;
+      if (value is num) return value.toInt();
+      final parsed = int.tryParse(value.toString());
+      if (parsed != null) return parsed;
+    }
+    return 0;
+  }
+
+  static bool _readBool(Map<String, dynamic> json, List<String> keys) {
+    for (final key in keys) {
+      final value = json[key];
+      if (value == null) continue;
+      if (value is bool) return value;
+      final normalized = value.toString().trim().toLowerCase();
+      if (normalized == 'true') return true;
+      if (normalized == 'false') return false;
+    }
+    return false;
+  }
+
   factory InsurancePlan.fromJson(Map<String, dynamic> json) {
     return InsurancePlan(
-      name: (json['name'] as String? ?? '').trim(),
-      weeklyPremium: (json['weeklyPremium'] as num? ?? 0).toInt(),
-      perTriggerPayout: (json['perTriggerPayout'] as num? ?? 0).toInt(),
-      maxDaysPerWeek: (json['maxDaysPerWeek'] as num? ?? 0).toInt(),
-      isPopular: json['isPopular'] == true,
+      name: _readString(json, const ['name']),
+      weeklyPremium: _readInt(json, const ['weeklyPremium', 'weekly_premium']),
+      perTriggerPayout: _readInt(json, const ['perTriggerPayout', 'per_trigger_payout']),
+      maxDaysPerWeek: _readInt(json, const ['maxDaysPerWeek', 'max_days_per_week']),
+      isPopular: _readBool(json, const ['isPopular', 'is_popular']),
     );
   }
 
@@ -31,29 +64,5 @@ class InsurancePlan {
       'maxDaysPerWeek': maxDaysPerWeek,
       'isPopular': isPopular,
     };
-  }
-
-  static List<InsurancePlan> getPlans() {
-    return const [
-      InsurancePlan(
-        name: 'Basic',
-        weeklyPremium: 45,
-        perTriggerPayout: 250,
-        maxDaysPerWeek: 2,
-      ),
-      InsurancePlan(
-        name: 'Standard',
-        weeklyPremium: 69,
-        perTriggerPayout: 400,
-        maxDaysPerWeek: 3,
-        isPopular: true,
-      ),
-      InsurancePlan(
-        name: 'Premium',
-        weeklyPremium: 89,
-        perTriggerPayout: 550,
-        maxDaysPerWeek: 4,
-      ),
-    ];
   }
 }

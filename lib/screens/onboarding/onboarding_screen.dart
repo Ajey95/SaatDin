@@ -80,13 +80,22 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         child: LayoutBuilder(
           builder: (context, constraints) {
             final h = constraints.maxHeight;
-            final scale = (h / 860).clamp(0.82, 1.0);
+            final w = constraints.maxWidth;
+            final heightScale = h / 860;
+            final widthScale = w / 390;
+            final scale = (heightScale < widthScale ? heightScale : widthScale)
+                .clamp(0.72, 1.0);
+            final headingScale = (w / 360).clamp(0.74, 1.0);
 
-            return Padding(
-              padding: EdgeInsets.fromLTRB(22, 28 * scale, 22, 22 * scale),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+            return SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: IntrinsicHeight(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(22, 28 * scale, 22, 22 * scale),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                   // Top header with page dots and skip button
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -145,37 +154,55 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Text(
-                          slide.titleLine1,
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.inter(
-                            fontSize: 42 * scale,
-                            fontWeight: FontWeight.w500,
-                            height: 1.0,
-                            letterSpacing: -1.2,
-                            color: const Color(0xFF171717),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              slide.titleLine1,
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.inter(
+                                fontSize: 42 * headingScale,
+                                fontWeight: FontWeight.w500,
+                                height: 1.0,
+                                letterSpacing: -1.2,
+                                color: const Color(0xFF171717),
+                              ),
+                            ),
                           ),
                         ),
-                        Text(
-                          slide.titleLine2,
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.pacifico(
-                            fontSize: 52 * scale,
-                            fontWeight: FontWeight.w400,
-                            height: 1.05,
-                            color: const Color(0xFF14B890),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              slide.titleLine2,
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.pacifico(
+                                fontSize: 52 * headingScale,
+                                fontWeight: FontWeight.w400,
+                                height: 1.05,
+                                color: const Color(0xFF14B890),
+                              ),
+                            ),
                           ),
                         ),
                         SizedBox(height: 10 * scale),
-                        Text(
-                          slide.titleLine3,
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.inter(
-                            fontSize: 42 * scale,
-                            fontWeight: FontWeight.w500,
-                            height: 1.0,
-                            letterSpacing: -1.2,
-                            color: const Color(0xFF171717),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              slide.titleLine3,
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.inter(
+                                fontSize: 42 * headingScale,
+                                fontWeight: FontWeight.w500,
+                                height: 1.0,
+                                letterSpacing: -1.2,
+                                color: const Color(0xFF171717),
+                              ),
+                            ),
                           ),
                         ),
                       ],
@@ -350,6 +377,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       ],
                     ),
                 ],
+              ),
+                  ),
+                ),
               ),
             );
           },
