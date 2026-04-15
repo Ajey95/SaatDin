@@ -167,6 +167,20 @@ _SCHEMA_BOOTSTRAP_SQL: List[str] = [
     )
     """,
     """
+    CREATE TABLE IF NOT EXISTS premium_payments (
+        id BIGSERIAL PRIMARY KEY,
+        phone TEXT NOT NULL,
+        week_start_date DATE NOT NULL,
+        amount DOUBLE PRECISION NOT NULL,
+        status TEXT NOT NULL,
+        provider_ref TEXT,
+        metadata_json JSONB,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(phone, week_start_date)
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS admin_actions (
         id BIGSERIAL PRIMARY KEY,
         actor TEXT NOT NULL,
@@ -1150,6 +1164,32 @@ async def has_recent_auto_claim(phone: str, claim_type: str, within_minutes: int
     return created_at is not None and created_at >= cutoff
 
 
+async def count_settled_auto_claim_days_for_phone_since(phone: str, since: datetime) -> int:
+    value = await _fetchval(
+        """
+        SELECT COUNT(DISTINCT DATE(created_at AT TIME ZONE 'UTC')) AS count
+        FROM claims
+        WHERE phone = ? AND source = 'auto' AND status = 'settled' AND created_at >= ?
+        """,
+        (phone, since),
+        0,
+    )
+    return int(value or 0)
+
+
+async def count_settled_claim_days_for_phone_since(phone: str, since: datetime) -> int:
+    value = await _fetchval(
+        """
+        SELECT COUNT(DISTINCT DATE(created_at AT TIME ZONE 'UTC')) AS count
+        FROM claims
+        WHERE phone = ? AND status = 'settled' AND created_at >= ?
+        """,
+        (phone, since),
+        0,
+    )
+    return int(value or 0)
+
+
 async def create_zonelock_report(
     *,
     phone: str,
@@ -1544,6 +1584,65 @@ async def list_payout_transfers(*, limit: int = 200) -> List[Dict[str, Any]]:
     )
 
 
+async def list_paid_premium_weeks_for_phone(phone: str, *, limit: int = 52) -> List[Dict[str, Any]]:
+    return await _fetchall(
+        """
+        SELECT week_start_date, amount, status, provider_ref, metadata_json, created_at, updated_at
+        FROM premium_payments
+        WHERE phone = ? AND status = 'paid'
+        ORDER BY week_start_date DESC
+        LIMIT ?
+        """,
+        (phone, max(1, int(limit))),
+    )
+
+
+async def upsert_premium_payment_week(
+    *,
+    phone: str,
+    week_start_date: datetime | str,
+    amount: float,
+    status: str,
+    provider_ref: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    now = _utc_now()
+    row = await _fetchone(
+        """
+        INSERT INTO premium_payments (
+            phone,
+            week_start_date,
+            amount,
+            status,
+            provider_ref,
+            metadata_json,
+            created_at,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (phone, week_start_date)
+        DO UPDATE SET
+            amount = excluded.amount,
+            status = excluded.status,
+            provider_ref = excluded.provider_ref,
+            metadata_json = excluded.metadata_json,
+            updated_at = excluded.updated_at
+        RETURNING *
+        """,
+        (
+            phone,
+            _to_storage(week_start_date),
+            float(amount),
+            status,
+            provider_ref,
+            _to_storage(metadata),
+            _to_storage(now),
+            _to_storage(now),
+        ),
+    )
+    return row or {}
+
+
 async def upsert_worker_payout_accounts(
     phone: str,
     *,
@@ -1671,6 +1770,19 @@ async def finalize_fraud_cluster_run(
             int(run_id),
         ),
     )
+
+
+async def list_existing_fraud_co_claim_cluster_keys(cluster_keys: List[str]) -> set[str]:
+    existing: set[str] = set()
+    unique_keys = {str(key).strip() for key in cluster_keys if str(key).strip()}
+    for key in unique_keys:
+        row = await _fetchone(
+            "SELECT cluster_key FROM fraud_co_claim_clusters WHERE cluster_key = ? LIMIT 1",
+            (key,),
+        )
+        if row and row.get("cluster_key") is not None:
+            existing.add(str(row["cluster_key"]))
+    return existing
 
 
 async def save_fraud_co_claim_clusters(run_id: int, clusters: List[Dict[str, Any]]) -> int:

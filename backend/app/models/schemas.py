@@ -200,6 +200,14 @@ class PolicyUpdateRequest(BaseModel):
     planName: str
 
 
+class PremiumPaymentRecordRequest(BaseModel):
+    amount: float = Field(gt=0)
+    status: str = Field(default="paid", min_length=4, max_length=16)
+    weekStartDate: Optional[str] = None
+    providerRef: Optional[str] = Field(default=None, max_length=128)
+    metadata: Optional[Dict[str, Any]] = None
+
+
 class ClaimSubmitRequest(BaseModel):
     claimType: str
     description: str = Field(min_length=3, max_length=300)
