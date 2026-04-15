@@ -163,7 +163,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                               decoration: BoxDecoration(
                                 color: Colors.white,
                                 borderRadius: BorderRadius.circular(14),
-                                border: Border.all(color: Colors.transparent),
+                                border: Border.all(color: Colors.white),
                               ),
                               child: Row(
                                 children: [
@@ -199,6 +199,8 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                                         color: AppColors.textPrimary,
                                       ),
                                       decoration: const InputDecoration(
+                                        filled: true,
+                                        fillColor: Colors.white,
                                         hintText: 'Enter mobile number',
                                         hintStyle: TextStyle(
                                           fontSize: 16,

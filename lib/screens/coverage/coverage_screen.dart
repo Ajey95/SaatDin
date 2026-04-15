@@ -20,8 +20,13 @@ class _CoverageScreenState extends State<CoverageScreen> {
   List<InsurancePlan> _plans = const <InsurancePlan>[];
   List<Claim> _claims = const <Claim>[];
   User? _user;
+  String _activePlanName = '';
+  int _activeWeeklyPremium = 0;
+  int _activePerTriggerPayout = 0;
+  int _activeMaxDaysPerWeek = 0;
   String? _pendingPlanName;
   String? _pendingEffectiveDate;
+  String? _tierConsistencyWarning;
   int? _backendCleanStreakWeeks;
   double? _backendLoyaltyDiscountPercent;
   bool _isLoading = true;
@@ -86,18 +91,45 @@ class _CoverageScreenState extends State<CoverageScreen> {
       final plans = await _apiService.getPlans(zone: user.zone, platform: user.platform);
       final claims = await _apiService.getClaims('me');
 
+      final activePlanName = _coerceString(policy['plan'], fallback: user.plan);
+      final activeWeeklyPremium = (policy['weeklyPremium'] as num? ?? 0).toInt();
+      final activePerTriggerPayout = (policy['perTriggerPayout'] as num? ?? 0).toInt();
+      final activeMaxDaysPerWeek = (policy['maxDaysPerWeek'] as num? ?? 0).toInt();
+
       var currentIndex = plans.indexWhere(
-        (p) => p.name.toLowerCase() == ((policy['plan'] as String? ?? user.plan).toLowerCase()),
+        (p) => p.name.toLowerCase() == activePlanName.toLowerCase(),
       );
-      if (currentIndex < 0) currentIndex = 0;
+      if (currentIndex < 0) {
+        currentIndex = 0;
+      }
+
+      final pendingPlanName = _coerceString(policy['pendingPlan']);
+      final hasActiveTierMismatch =
+          activePlanName.isNotEmpty && !_planExists(plans, activePlanName);
+      final hasPendingTierMismatch =
+          pendingPlanName.isNotEmpty && !_planExists(plans, pendingPlanName);
+
+      String? tierConsistencyWarning;
+      if (hasActiveTierMismatch) {
+        tierConsistencyWarning =
+            'Your active plan ($activePlanName) is not available in the current tier list. Current limits below are still enforced until backend tiers sync.';
+      } else if (hasPendingTierMismatch) {
+        tierConsistencyWarning =
+            'Your queued plan change ($pendingPlanName) is not available in the current tier list yet. Your current plan limits remain active this week.';
+      }
 
       if (!mounted) return;
       setState(() {
         _user = user;
         _plans = plans;
         _claims = claims;
+        _activePlanName = activePlanName;
+        _activeWeeklyPremium = activeWeeklyPremium;
+        _activePerTriggerPayout = activePerTriggerPayout;
+        _activeMaxDaysPerWeek = activeMaxDaysPerWeek;
         _pendingPlanName = policy['pendingPlan'] as String?;
         _pendingEffectiveDate = policy['pendingEffectiveDate'] as String?;
+        _tierConsistencyWarning = tierConsistencyWarning;
         _backendCleanStreakWeeks = (policy['cleanStreakWeeks'] as num?)?.toInt();
         _backendLoyaltyDiscountPercent = (policy['loyaltyDiscountPercent'] as num?)?.toDouble();
         _currentTierIndex = currentIndex;
@@ -107,7 +139,7 @@ class _CoverageScreenState extends State<CoverageScreen> {
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to load coverage from backend.')),
+          const SnackBar(content: Text('Could not refresh coverage details.')),
         );
       }
     } finally {
@@ -187,11 +219,20 @@ class _CoverageScreenState extends State<CoverageScreen> {
                   const SizedBox(height: 18),
               const _CoverageSectionHeader('Tier Selector'),
               const SizedBox(height: 10),
+              if (_tierConsistencyWarning != null && _tierConsistencyWarning!.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _buildTierConsistencyWarning(_tierConsistencyWarning!),
+                ),
               if (_pendingPlanName != null && _pendingPlanName!.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: _buildPendingPlanNotice(),
                 ),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _buildCurrentPlanLimitsCard(),
+              ),
               ..._plans.asMap().entries.map(
                 (entry) {
                   final index = entry.key;
@@ -694,13 +735,87 @@ class _CoverageScreenState extends State<CoverageScreen> {
     );
   }
 
+  Widget _buildTierConsistencyWarning(String message) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.error.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.error.withValues(alpha: 0.28)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 1),
+            child: Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 16),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCurrentPlanLimitsCard() {
+    final activeName = _activePlanName.isEmpty ? 'Current plan' : _activePlanName;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.infoLight,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.info.withValues(alpha: 0.28)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$activeName limits active this week',
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            'Premium: Rs $_activeWeeklyPremium · Per trigger: Rs $_activePerTriggerPayout · Max days/week: $_activeMaxDaysPerWeek',
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  bool _planExists(List<InsurancePlan> plans, String planName) {
+    final target = planName.trim().toLowerCase();
+    if (target.isEmpty) return false;
+    return plans.any((plan) => plan.name.trim().toLowerCase() == target);
+  }
+
   int get _cleanStreakWeeks {
     if (_backendCleanStreakWeeks != null && _backendCleanStreakWeeks! >= 0) {
       return _backendCleanStreakWeeks!;
     }
 
     if (_claims.isEmpty) {
-      return 6;
+      return 0;
     }
 
     final now = DateTime.now();

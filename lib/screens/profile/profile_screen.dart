@@ -58,7 +58,7 @@ class ProfileScreen extends StatelessWidget {
             backgroundColor: AppColors.scaffoldBackground,
             body: Center(
               child: Text(
-                'Failed to load profile. Please retry.',
+                'Could not load settings. Please retry.',
                 style: TextStyle(color: AppColors.textSecondary),
               ),
             ),
@@ -83,22 +83,53 @@ class ProfileScreen extends StatelessWidget {
         final contact = _formatPhone(user.phone);
 
         return Scaffold(
-          backgroundColor: const Color(0xFFF4F7F5),
-          body: Column(
+          backgroundColor: AppColors.scaffoldBackground,
+          body: Stack(
             children: [
-              _buildHeader(
-                context,
-                user,
-                contact,
-                policyStatusLabel,
-                locationLabel,
+              const Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: SizedBox(
+                  height: 205,
+                  child: CustomPaint(
+                    painter: _ProfileTopBackgroundPainter(),
+                  ),
+                ),
               ),
-              Expanded(
+              SafeArea(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.only(bottom: 28),
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      _buildTopUtilityButtons(context),
+                      const SizedBox(height: 14),
+                      const Text(
+                        'Settings',
+                        style: TextStyle(
+                          fontSize: 30,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textPrimary,
+                          letterSpacing: -0.4,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Manage your profile, coverage, and payouts.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _buildHeader(
+                        context,
+                        user,
+                        contact,
+                        policyStatusLabel,
+                        locationLabel,
+                      ),
                       _buildCoverageBanner(
                         perTriggerPayout: perTriggerPayout,
                         activePlan: activePlan,
@@ -192,101 +223,99 @@ class ProfileScreen extends StatelessWidget {
     String locationLabel,
   ) {
     return Container(
-      color: AppColors.primary,
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              // Top bar
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _headerIconButton(
-                    icon: Icons.arrow_back,
-                    onTap: () => _switchToTab(context, 0),
-                  ),
-                  _headerIconButton(
-                    icon: Icons.notifications_none,
-                    onTap: () => _showNotificationsSheet(context),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              // Profile row
-              Row(
-                children: [
-                  Container(
-                    width: 56,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.4),
-                          width: 2),
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.4), width: 2),
+                ),
+                child: Center(
+                  child: Text(
+                    _displayInitial(user.name),
+                    style: const TextStyle(
+                      color: AppColors.primary,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
                     ),
-                    child: Center(
-                      child: Text(
-                        _displayInitial(user.name),
-                        style: TextStyle(
-                          color: AppColors.primary,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w700,
-                        ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      user.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                        height: 1.2,
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          user.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                            height: 1.2,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          contact,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w400,
-                            color: Colors.white.withValues(alpha: 0.72),
-                            fontFamily: 'monospace',
-                          ),
-                        ),
-                      ],
+                    const SizedBox(height: 2),
+                    Text(
+                      contact,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w400,
+                        color: Colors.white.withValues(alpha: 0.72),
+                        fontFamily: 'monospace',
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  _editButton(context, user, contact),
-                ],
+                  ],
+                ),
               ),
-              const SizedBox(height: 16),
-              // Status pills
-              Row(
-                children: [
-                  _statusPill(dotColor: const Color(0xFF6EFFC4), label: policyStatus),
-                  const SizedBox(width: 8),
-                  _statusPill(dotColor: const Color(0xFFFFD980), label: locationLabel),
-                ],
-              ),
+              const SizedBox(width: 10),
+              _editButton(context, user, contact),
             ],
           ),
-        ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _statusPill(dotColor: const Color(0xFF6EFFC4), label: policyStatus),
+              _statusPill(dotColor: const Color(0xFFFFD980), label: locationLabel),
+            ],
+          ),
+        ],
       ),
+    );
+  }
+
+  Widget _buildTopUtilityButtons(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        _headerIconButton(
+          icon: Icons.arrow_back,
+          onTap: () => _switchToTab(context, 0),
+        ),
+        _headerIconButton(
+          icon: Icons.notifications_none,
+          onTap: () => _showNotificationsSheet(context),
+        ),
+      ],
     );
   }
 
@@ -341,6 +370,7 @@ class ProfileScreen extends StatelessWidget {
     required String label,
   }) {
     return Container(
+      constraints: const BoxConstraints(maxWidth: 220),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.15),
@@ -360,12 +390,16 @@ class ProfileScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 5),
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-              color: Colors.white,
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+                color: Colors.white,
+              ),
             ),
           ),
         ],
@@ -834,4 +868,45 @@ class _ProfileViewData {
   final User user;
   final Map<String, dynamic> policy;
   final List<Claim> claims;
+}
+
+class _ProfileTopBackgroundPainter extends CustomPainter {
+  const _ProfileTopBackgroundPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final backgroundPaint = Paint()
+      ..shader = const LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          Color(0xFFE7F8F4),
+          Color(0xFFF1FBF8),
+          Color(0xFFF8FCFA),
+        ],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), backgroundPaint);
+
+    final shapePaint = Paint()..color = AppColors.primary.withValues(alpha: 0.12);
+    final shapePath = Path()
+      ..moveTo(-20, size.height * 0.74)
+      ..lineTo(size.width * 0.42, size.height * 0.56)
+      ..lineTo(size.width + 30, size.height * 0.84)
+      ..lineTo(size.width + 30, size.height)
+      ..lineTo(-20, size.height)
+      ..close();
+    canvas.drawPath(shapePath, shapePaint);
+
+    final ringPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..color = AppColors.primary.withValues(alpha: 0.15);
+
+    canvas.drawCircle(Offset(size.width * 0.18, size.height * 0.2), 32, ringPaint);
+    canvas.drawCircle(Offset(size.width * 0.86, size.height * 0.3), 48, ringPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
