@@ -187,11 +187,16 @@ class PolicyOut(BaseModel):
     zone: str
     zonePincode: str
     weeklyPremium: int
+    amountPaidThisWeek: float = 0.0
     earningsProtected: float
     parametricCoverageOn: bool
     perTriggerPayout: int
     maxDaysPerWeek: int
     nextBillingDate: str
+    cycleStartDate: Optional[str] = None
+    cycleEndDate: Optional[str] = None
+    paidOnDate: Optional[str] = None
+    daysLeft: int = 0
     cleanStreakWeeks: int = 0
     loyaltyDiscountPercent: float = 0.0
 

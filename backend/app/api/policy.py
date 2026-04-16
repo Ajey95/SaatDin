@@ -122,7 +122,10 @@ def _build_policy(worker: dict, settled_total: float) -> PolicyOut:
         selected = plans[1]
 
     now = datetime.now(timezone.utc)
-    next_billing = _next_week_start_utc(now).date().isoformat()
+    next_billing_date = _next_week_start_utc(now).date()
+    cycle_start_date = next_billing_date - timedelta(days=7)
+    cycle_end_date = next_billing_date
+    days_left = max(0, (cycle_end_date - now.date()).days)
     pending_effective_at = worker.get("pending_plan_effective_at")
     pending_effective_date = None
     if pending_effective_at:
@@ -136,11 +139,16 @@ def _build_policy(worker: dict, settled_total: float) -> PolicyOut:
         zone=str(worker.get("zone_name") or zone_data.get("name") or "Unknown"),
         zonePincode=str(worker.get("zone_pincode") or pincode),
         weeklyPremium=selected.weeklyPremium,
+        amountPaidThisWeek=float(selected.weeklyPremium),
         earningsProtected=round(settled_total, 2),
         parametricCoverageOn=True,
         perTriggerPayout=selected.perTriggerPayout,
         maxDaysPerWeek=selected.maxDaysPerWeek,
-        nextBillingDate=next_billing,
+        nextBillingDate=next_billing_date.isoformat(),
+        cycleStartDate=cycle_start_date.isoformat(),
+        cycleEndDate=cycle_end_date.isoformat(),
+        paidOnDate=now.date().isoformat(),
+        daysLeft=days_left,
     )
 
 
@@ -154,6 +162,7 @@ async def get_my_policy(worker: dict = Depends(get_current_worker)) -> ApiRespon
     policy.cleanStreakWeeks = clean_streak_weeks
     policy.loyaltyDiscountPercent = loyalty_discount_percent
     policy.weeklyPremium = _apply_loyalty_discount(policy.weeklyPremium, loyalty_discount_percent)
+    policy.amountPaidThisWeek = float(policy.weeklyPremium)
     logger.info("policy_requested phone=%s", worker["phone"])
     return ApiResponse(success=True, data=policy)
 
@@ -177,6 +186,7 @@ async def update_policy_plan(payload: PolicyUpdateRequest, worker: dict = Depend
         policy.cleanStreakWeeks = clean_streak_weeks
         policy.loyaltyDiscountPercent = loyalty_discount_percent
         policy.weeklyPremium = _apply_loyalty_discount(policy.weeklyPremium, loyalty_discount_percent)
+        policy.amountPaidThisWeek = float(policy.weeklyPremium)
         return ApiResponse(success=True, data=policy, message="Selected plan is already active")
 
     next_week_effective_at = _next_week_start_utc(datetime.now(timezone.utc))
@@ -233,6 +243,7 @@ async def record_premium_payment(
     policy.cleanStreakWeeks = clean_streak_weeks
     policy.loyaltyDiscountPercent = loyalty_discount_percent
     policy.weeklyPremium = _apply_loyalty_discount(policy.weeklyPremium, loyalty_discount_percent)
+    policy.amountPaidThisWeek = float(policy.weeklyPremium)
 
     logger.info(
         "premium_payment_recorded phone=%s status=%s week_start=%s amount=%s",

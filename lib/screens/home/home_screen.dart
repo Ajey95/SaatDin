@@ -8,6 +8,7 @@ import '../../models/plan_model.dart';
 import '../../routes/app_routes.dart';
 import '../../services/api_service.dart';
 import '../../services/tab_router.dart';
+import 'policy_status_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -40,19 +41,27 @@ class HomeScreen extends StatelessWidget {
     final latestClaim = _latestClaimForUpdates(claims);
     final perTriggerPayout = (policy['perTriggerPayout'] as num? ?? 0).toDouble();
     final zoneKey = (policy['zonePincode'] as String? ?? user.zonePincode).trim();
+    final policyZone = _coerceText(policy['zone'], fallback: user.zone);
+    final policyPlatform = _coerceText(policy['platform'], fallback: user.platform);
 
     final maxDaysPerWeek = (policy['maxDaysPerWeek'] as num? ?? 0).toInt();
-    final nextBillingRaw = (policy['nextBillingDate'] as String? ?? '').trim();
-    final nextBillingDate = DateTime.tryParse(nextBillingRaw);
-    final serverNow = nextBillingDate != null
-        ? nextBillingDate.toUtc().subtract(const Duration(days: 7))
-        : DateTime.now().toUtc();
-    final weekStart = serverNow.subtract(Duration(days: serverNow.weekday - 1));
-    final weekEnd = weekStart.add(const Duration(days: 7));
+    final nextBillingDate = _coerceDateString(
+      policy['nextBillingDate'],
+      fallback: _fallbackNextBillingDateString(),
+    );
+    final cycleStartDate = _coerceDateString(
+      policy['cycleStartDate'],
+      fallback: _shiftDateString(nextBillingDate, days: -7),
+    );
+    final cycleEndDate = _coerceDateString(
+      policy['cycleEndDate'],
+      fallback: nextBillingDate,
+    );
+    final daysLeft = (policy['daysLeft'] as num?)?.toInt();
+    final amountPaidThisWeek = (policy['amountPaidThisWeek'] as num?)?.toDouble();
 
     final claimsThisWeek = claims.where((claim) {
-      final claimDate = claim.date.toUtc();
-      return !claimDate.isBefore(weekStart) && claimDate.isBefore(weekEnd);
+      return claim.status == ClaimStatus.settled;
     }).toList();
 
     final claimsProcessedThisWeek = claimsThisWeek.length;
@@ -86,16 +95,11 @@ class HomeScreen extends StatelessWidget {
       );
     }
 
-    final daysUntilBilling = nextBillingDate != null
-        ? nextBillingDate.toUtc().difference(serverNow).inDays.clamp(0, 7)
-        : 7;
-    final coveredDaysLeft = (maxDaysPerWeek - claimsProcessedThisWeek)
-        .clamp(0, maxDaysPerWeek)
-        .clamp(0, daysUntilBilling);
+    final coveredDaysLeft = daysLeft ?? (maxDaysPerWeek - claimsProcessedThisWeek).clamp(0, maxDaysPerWeek);
 
     final activePlan = InsurancePlan(
       name: (policy['plan'] as String? ?? user.plan).trim(),
-      weeklyPremium: (policy['weeklyPremium'] as num? ?? 0).toInt(),
+      weeklyPremium: (amountPaidThisWeek ?? (policy['weeklyPremium'] as num? ?? 0).toDouble()).toInt(),
       perTriggerPayout: (policy['perTriggerPayout'] as num? ?? 0).toInt(),
       maxDaysPerWeek: (policy['maxDaysPerWeek'] as num? ?? 0).toInt(),
       isPopular: false,
@@ -114,6 +118,10 @@ class HomeScreen extends StatelessWidget {
               .where((claim) => claim.status == ClaimStatus.settled)
               .fold<double>(0, (sum, claim) => sum + claim.amount),
       coveredDaysLeft: coveredDaysLeft,
+      cycleStartDate: cycleStartDate,
+      cycleEndDate: cycleEndDate,
+      zoneLabel: policyZone,
+      platformLabel: policyPlatform,
       claimsProcessedThisWeek: claimsProcessedThisWeek,
       payoutThisWeek: payoutThisWeek,
     );
@@ -284,8 +292,6 @@ class HomeScreen extends StatelessWidget {
   Widget _buildWithData(BuildContext context, _HomeViewData data) {
     final user = data.user;
     final activePlan = data.activePlan;
-    final cycleStart = DateTime.now();
-    final cycleEnd = cycleStart.add(const Duration(days: 7));
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -321,8 +327,10 @@ class HomeScreen extends StatelessWidget {
                     context,
                     user,
                     activePlan,
-                    cycleStart,
-                    cycleEnd,
+                    data.cycleStartDate,
+                    data.cycleEndDate,
+                    zoneLabel: data.zoneLabel,
+                    platformLabel: data.platformLabel,
                   ),
                   const SizedBox(height: 14),
                   _buildTodaysUpdatesSnapshot(data.latestClaim),
@@ -352,8 +360,8 @@ class HomeScreen extends StatelessWidget {
     BuildContext context,
     User user,
     InsurancePlan activePlan,
-    DateTime cycleStart,
-    DateTime cycleEnd,
+    String cycleStartDate,
+    String cycleEndDate,
   ) {
     return SafeArea(
       child: Padding(
@@ -367,8 +375,10 @@ class HomeScreen extends StatelessWidget {
               context,
               user,
               activePlan,
-              cycleStart,
-              cycleEnd,
+              cycleStartDate,
+              cycleEndDate,
+              zoneLabel: _coerceText(user.zone),
+              platformLabel: _coerceText(user.platform),
             ),
           ],
         ),
@@ -648,17 +658,27 @@ class HomeScreen extends StatelessWidget {
     BuildContext context,
     User user,
     InsurancePlan activePlan,
-    DateTime cycleStart,
-    DateTime cycleEnd,
+    String cycleStartDate,
+    String cycleEndDate,
+    {
+    required String zoneLabel,
+    required String platformLabel,
+  }
   ) {
-    final dateRange =
-        '${DateFormat('MMM d').format(cycleStart)} → ${DateFormat('MMM d, y').format(cycleEnd)}';
+    final startLabel = _formatDateLabel(cycleStartDate);
+    final endLabel = _formatDateLabel(cycleEndDate);
+    final resolvedStartLabel = startLabel == endLabel && cycleEndDate.isNotEmpty
+        ? _formatDateLabel(_shiftDateString(cycleEndDate, days: -7))
+        : startLabel;
+    final dateRange = '$resolvedStartLabel → $endLabel';
     final planTitle =
         activePlan.name.trim().isEmpty ? 'Standard' : activePlan.name.trim();
     final zonePincode = user.zonePincode.trim();
-    final platformZone = zonePincode.isEmpty
-      ? '${user.platform} · ${user.zone}'
-      : '${user.platform} · ${user.zone} · $zonePincode';
+    final parts = <String>[];
+    if (platformLabel.trim().isNotEmpty) parts.add(platformLabel.trim());
+    if (zoneLabel.trim().isNotEmpty) parts.add(zoneLabel.trim());
+    if (zonePincode.isNotEmpty) parts.add(zonePincode);
+    final platformZone = parts.isEmpty ? 'Not set' : parts.join(' · ');
 
     return Container(
       width: double.infinity,
@@ -788,7 +808,13 @@ class HomeScreen extends StatelessWidget {
                 child: SizedBox(
                   height: 46,
                   child: OutlinedButton.icon(
-                    onPressed: () => _openCoverage(context),
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const CoverageStatusScreen(),
+                        ),
+                      );
+                    },
                     icon: const Icon(Icons.description_outlined, size: 16),
                     label: const Text('View Details'),
                     style: OutlinedButton.styleFrom(
@@ -841,6 +867,40 @@ class HomeScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _coerceDateString(Object? value, {Object? fallback}) {
+    final primary = value?.toString().trim() ?? '';
+    if (primary.isNotEmpty) {
+      return primary;
+    }
+    final secondary = fallback?.toString().trim() ?? '';
+    return secondary;
+  }
+
+  String _coerceText(Object? value, {String fallback = ''}) {
+    final parsed = value?.toString().trim() ?? '';
+    return parsed.isEmpty ? fallback : parsed;
+  }
+
+  String _shiftDateString(String value, {required int days}) {
+    final parsed = DateTime.tryParse(value);
+    if (parsed == null) {
+      return value;
+    }
+    return parsed.toUtc().add(Duration(days: days)).toIso8601String();
+  }
+
+  String _fallbackNextBillingDateString() {
+    return DateTime.now().toUtc().add(const Duration(days: 7)).toIso8601String();
+  }
+
+  String _formatDateLabel(String value) {
+    final parsed = DateTime.tryParse(value);
+    if (parsed == null) {
+      return value.isEmpty ? 'Not set' : value;
+    }
+    return DateFormat('MMM d, y').format(parsed.toLocal());
   }
 
   // ─── Today's updates ──────────────────────────────────────────────────────
@@ -2119,6 +2179,10 @@ class _HomeViewData {
     required this.earningsProtected,
     required this.totalEarnings,
     required this.coveredDaysLeft,
+    required this.cycleStartDate,
+    required this.cycleEndDate,
+    required this.zoneLabel,
+    required this.platformLabel,
     required this.claimsProcessedThisWeek,
     required this.payoutThisWeek,
   });
@@ -2131,6 +2195,10 @@ class _HomeViewData {
   final double earningsProtected;
   final double? totalEarnings;
   final int coveredDaysLeft;
+  final String cycleStartDate;
+  final String cycleEndDate;
+  final String zoneLabel;
+  final String platformLabel;
   final int claimsProcessedThisWeek;
   final double payoutThisWeek;
 }
