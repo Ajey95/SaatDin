@@ -1377,7 +1377,7 @@ class _PayoutsScreenState extends State<PayoutsScreen> {
     required String? currentValue,
     required ValueChanged<String> onSaved,
   }) async {
-    final controller = TextEditingController(text: currentValue);
+    String draftUpi = currentValue?.trim() ?? '';
 
     await showModalBottomSheet<void>(
       context: context,
@@ -1404,8 +1404,9 @@ class _PayoutsScreenState extends State<PayoutsScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: controller,
+              TextFormField(
+                initialValue: draftUpi,
+                onChanged: (value) => draftUpi = value,
                 decoration: const InputDecoration(
                   labelText: 'UPI ID',
                   hintText: 'name@bank',
@@ -1417,7 +1418,7 @@ class _PayoutsScreenState extends State<PayoutsScreen> {
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: () {
-                    final value = controller.text.trim();
+                    final value = draftUpi.trim();
                     if (value.isEmpty || !value.contains('@')) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Enter a valid UPI ID')),
@@ -1451,8 +1452,6 @@ class _PayoutsScreenState extends State<PayoutsScreen> {
         );
       },
     );
-
-    controller.dispose();
   }
 
   Future<void> _verifyPrimary() async {
