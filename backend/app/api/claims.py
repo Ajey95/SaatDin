@@ -79,11 +79,29 @@ def _resolve_worker_plan(worker: dict) -> Optional[Any]:
         platform = Platform.from_input(str(worker.get("platform_name", "swiggy_instamart")))
         plans = build_plans(zone_multiplier, platform, zone_data=zone_data)
         if not plans:
+            logger.warning(
+                "claim_plan_resolution_fallback_applied phone=%s reason=no_plans_returned zone=%s",
+                str(worker.get("phone", "unknown")),
+                zone_pincode,
+            )
             return None
         worker_plan_name = str(worker.get("plan_name", "")).strip().lower()
         selected = next((plan for plan in plans if plan.name.lower() == worker_plan_name), None)
+        if selected is None:
+            fallback_plan = plans[1] if len(plans) > 1 else plans[0]
+            logger.warning(
+                "claim_plan_resolution_fallback_applied phone=%s requested_plan=%s fallback_plan=%s",
+                str(worker.get("phone", "unknown")),
+                worker_plan_name,
+                fallback_plan.name,
+            )
         return selected if selected is not None else (plans[1] if len(plans) > 1 else plans[0])
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "claim_plan_resolution_fallback_applied phone=%s reason=%s",
+            str(worker.get("phone", "unknown")),
+            str(exc),
+        )
         return None
 
 

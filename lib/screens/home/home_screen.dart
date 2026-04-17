@@ -688,18 +688,8 @@ class HomeScreen extends StatelessWidget {
   ) {
     final startLabel = _formatDateLabel(cycleStartDate);
     final endLabel = _formatDateLabel(cycleEndDate);
-    final resolvedStartLabel = startLabel == endLabel && cycleEndDate.isNotEmpty
-        ? _formatDateLabel(_shiftDateString(cycleEndDate, days: -7))
-        : startLabel;
-    final dateRange = '$resolvedStartLabel → $endLabel';
     final planTitle =
         activePlan.name.trim().isEmpty ? 'Standard' : activePlan.name.trim();
-    final zonePincode = user.zonePincode.trim();
-    final parts = <String>[];
-    if (platformLabel.trim().isNotEmpty) parts.add(platformLabel.trim());
-    if (zoneLabel.trim().isNotEmpty) parts.add(zoneLabel.trim());
-    if (zonePincode.isNotEmpty) parts.add(zonePincode);
-    final platformZone = parts.isEmpty ? 'Not set' : parts.join(' · ');
 
     return Container(
       width: double.infinity,
@@ -786,50 +776,6 @@ class HomeScreen extends StatelessWidget {
               fontWeight: FontWeight.w500,
               height: 1.2,
             ),
-          ),
-          const SizedBox(height: 14),
-          // Date and zone on a single row separated by a vertical divider.
-          Row(
-            children: [
-              Icon(
-                Icons.calendar_today_outlined,
-                size: 14,
-                color: Colors.white.withValues(alpha: 0.75),
-              ),
-              const SizedBox(width: 5),
-              Text(
-                dateRange,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.white.withValues(alpha: 0.85),
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Container(
-                width: 1,
-                height: 12,
-                color: Colors.white.withValues(alpha: 0.3),
-              ),
-              const SizedBox(width: 10),
-              Icon(
-                Icons.wb_sunny_outlined,
-                size: 14,
-                color: Colors.white.withValues(alpha: 0.75),
-              ),
-              const SizedBox(width: 5),
-              Flexible(
-                child: Text(
-                  platformZone,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.white.withValues(alpha: 0.85),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
           ),
           const SizedBox(height: 18),
           // Buttons – ghost "View Details" and solid white "File a Claim".

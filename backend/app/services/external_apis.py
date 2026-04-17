@@ -82,16 +82,22 @@ class ExternalAPIClient:
         if tz_name and ZoneInfo is not None:
             try:
                 return ZoneInfo(tz_name)  # type: ignore[return-value]
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("api_timezone_fallback_applied reason=invalid_zoneinfo timezone=%s error=%s", tz_name, str(exc))
 
         offset_seconds = data.get("utc_offset_seconds")
         if isinstance(offset_seconds, (int, float)):
             try:
                 return timezone(timedelta(seconds=int(offset_seconds)))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "api_timezone_fallback_applied reason=invalid_offset offset_seconds=%s error=%s",
+                    str(offset_seconds),
+                    str(exc),
+                )
 
+        if tz_name or offset_seconds is not None:
+            logger.info("api_timezone_fallback_applied reason=default_utc timezone=%s offset_seconds=%s", tz_name, str(offset_seconds))
         return timezone.utc
 
     def _parse_open_meteo_time(self, raw_time: Any, response_tz: timezone) -> Optional[datetime]:

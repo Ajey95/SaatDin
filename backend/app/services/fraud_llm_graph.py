@@ -262,6 +262,13 @@ def _invoke_providers_node(state: _FraudLLMState) -> _FraudLLMState:
                 }
             )
             if bool(attempt.get("success")) and isinstance(attempt.get("payload"), dict):
+                if index > 0:
+                    logger.warning(
+                        "fraud_llm_provider_fallback_applied provider=%s fallback_from=%s attempts=%s",
+                        str(attempt.get("provider") or "unknown"),
+                        providers[0] if providers else "unknown",
+                        len(attempts),
+                    )
                 return {
                     **state,
                     "attempts": attempts,
@@ -333,6 +340,7 @@ def run_fraud_llm_fallback(
 ) -> Dict[str, Any]:
     scored_at = datetime.now(timezone.utc).isoformat()
     if not settings.fraud_llm_fallback_enabled:
+        logger.info("fraud_llm_fallback_skipped reason=disabled")
         return {
             "status": "disabled",
             "decision": None,
@@ -344,6 +352,7 @@ def run_fraud_llm_fallback(
             "scored_at": scored_at,
         }
     if _graph is None:
+        logger.warning("fraud_llm_fallback_unavailable reason=graph_not_compiled")
         return {
             "status": "unavailable",
             "decision": None,
@@ -381,8 +390,26 @@ def run_fraud_llm_fallback(
             "validation_error": "Graph returned non-dict state",
             "scored_at": scored_at,
         }
+    status = str(final_state.get("status", "provider_failed"))
+    if status in {"provider_failed", "invalid_output"}:
+        logger.warning(
+            "fraud_llm_fallback_result status=%s provider=%s attempts=%s validation_error=%s",
+            status,
+            str(final_state.get("provider") or "none"),
+            len(final_state.get("attempts", []) or []),
+            str(final_state.get("validation_error") or ""),
+        )
+    elif status == "accepted":
+        logger.info(
+            "fraud_llm_fallback_result status=%s provider=%s fallback_used=%s attempts=%s",
+            status,
+            str(final_state.get("provider") or "none"),
+            bool(final_state.get("fallback_used", False)),
+            len(final_state.get("attempts", []) or []),
+        )
+
     return {
-        "status": str(final_state.get("status", "provider_failed")),
+        "status": status,
         "decision": final_state.get("decision"),
         "provider": final_state.get("provider"),
         "model": final_state.get("model"),

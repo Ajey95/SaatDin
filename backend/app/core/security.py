@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import random
 import secrets
+import logging
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from datetime import datetime, timedelta, timezone
 
@@ -12,6 +13,8 @@ from fastapi import HTTPException, status
 from jwt import InvalidTokenError
 
 from .config import settings
+
+logger = logging.getLogger(__name__)
 
 _PASSWORD_SCHEME = "pbkdf2_sha256"
 _PASSWORD_ITERATIONS = 210_000
@@ -43,12 +46,14 @@ def verify_password(password: str, stored_value: str) -> bool:
             iterations = int(parts[1])
             salt = urlsafe_b64decode(parts[2].encode("ascii"))
             expected = urlsafe_b64decode(parts[3].encode("ascii"))
-        except Exception:
+        except Exception as exc:
+            logger.warning("password_hash_parse_failed fallback=reject reason=%s", str(exc))
             return False
         derived = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, max(1, iterations))
         return hmac.compare_digest(derived, expected)
 
     # Backward-compatible fallback for legacy plaintext admin password config.
+    logger.warning("password_verify_legacy_fallback_applied scheme=plaintext")
     return hmac.compare_digest(password, stored)
 
 

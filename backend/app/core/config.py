@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     fraud_fail_open: bool = True
     fraud_metrics_log_every_n: int = 25
 
+    # Backward compatibility for older test fixtures that still patch a local DB path.
+    database_path: str = ""
+
     # Ambiguous-case LLM fallback (LangGraph + provider failover)
     fraud_llm_fallback_enabled: bool = True
     fraud_llm_ambiguity_margin: float = 0.07
@@ -209,7 +212,7 @@ class Settings(BaseSettings):
 
     @property
     def database_url(self) -> str:
-        return self.supabase_db_url
+        return self.supabase_db_url or self.database_path
 
     @property
     def fraud_llm_provider_sequence(self) -> List[str]:

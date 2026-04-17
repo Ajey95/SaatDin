@@ -11,13 +11,29 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.app.core.security import create_access_token
+from backend.app.core import zone_cache
 
 
 @pytest.fixture(autouse=True)
 def _isolate_database(tmp_path):
     """Each test gets its own temporary SQLite database."""
     db_path = str(tmp_path / "test_backend.db")
-    with patch("backend.app.core.config.settings.database_path", db_path):
+    zone_map = {
+        "560103": {
+            "name": "Bellandur",
+            "zone_risk_multiplier": 1.0,
+            "dark_stores": {
+                "Blinkit": True,
+                "Zepto": True,
+                "Swiggy_Instamart": True,
+            },
+        }
+    }
+    with (
+        patch("backend.app.core.config.settings.database_path", db_path),
+        patch.object(zone_cache, "_ZONE_MAP", zone_map),
+        patch.object(zone_cache, "_ZONE_NAME_INDEX", {"bellandur": "560103"}),
+    ):
         yield
 
 

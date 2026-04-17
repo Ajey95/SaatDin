@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from typing import List, Dict, Any
 
 from ..core.config import settings
 from ..models.platform import Platform
 from ..models.schemas import PlanOut
+
+logger = logging.getLogger(__name__)
 
 PLATFORM_FACTORS = {
     Platform.blinkit: 1.10,
@@ -64,6 +67,11 @@ def build_plans(zone_multiplier: float, platform: Platform, zone_data: Dict[str,
         standard_premium = calculate_premium_ml(zone_data, platform, "standard", zone_multiplier)
         premium_premium = calculate_premium_ml(zone_data, platform, "premium", zone_multiplier)
     else:
+        logger.warning(
+            "premium_formula_fallback_applied reason=missing_zone_data platform=%s zone_multiplier=%.3f",
+            platform.value,
+            float(zone_multiplier),
+        )
         basic_premium = calculate_premium(zone_multiplier, platform, "basic")
         standard_premium = calculate_premium(zone_multiplier, platform, "standard")
         premium_premium = calculate_premium(zone_multiplier, platform, "premium")

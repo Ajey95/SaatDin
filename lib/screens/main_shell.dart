@@ -19,12 +19,21 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
+  late final List<Widget?> _loadedScreens;
+
+  static const int _homeTabIndex = 0;
+  static const int _claimsTabIndex = 1;
+  static const int _coverageTabIndex = 2;
+  static const int _payoutsTabIndex = 3;
+  static const int _profileTabIndex = 4;
 
   @override
   void initState() {
     super.initState();
     TabRouter.resetToHome();
     _currentIndex = TabRouter.tabIndex.value;
+    _loadedScreens = List<Widget?>.filled(_screenCount, null, growable: false);
+    _ensureScreenLoaded(_currentIndex);
     TabRouter.tabIndex.addListener(_handleExternalTabChange);
     unawaited(SignalCaptureService.instance.start());
   }
@@ -40,26 +49,46 @@ class _MainShellState extends State<MainShell> {
     if (!mounted) return;
     final nextIndex = TabRouter.tabIndex.value;
     if (nextIndex == _currentIndex) return;
-    if (nextIndex < 0 || nextIndex >= _screens.length) return;
+    if (nextIndex < 0 || nextIndex >= _screenCount) return;
     setState(() {
+      _ensureScreenLoaded(nextIndex);
       _currentIndex = nextIndex;
     });
   }
 
-  List<Widget> get _screens => const [
-        HomeScreen(),
-        ClaimsScreen(),
-        CoverageScreen(),
-        PayoutsScreen(),
-        ProfileScreen(),
-      ];
+  static const int _screenCount = 5;
+
+  void _ensureScreenLoaded(int index) {
+    if (_loadedScreens[index] != null) return;
+    _loadedScreens[index] = _buildScreen(index);
+  }
+
+  Widget _buildScreen(int index) {
+    switch (index) {
+      case _homeTabIndex:
+        return const HomeScreen();
+      case _claimsTabIndex:
+        return const ClaimsScreen();
+      case _coverageTabIndex:
+        return const CoverageScreen();
+      case _payoutsTabIndex:
+        return const PayoutsScreen();
+      case _profileTabIndex:
+      default:
+        return const ProfileScreen();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: IndexedStack(
         index: _currentIndex,
-        children: _screens,
+        children: List<Widget>.generate(
+          _screenCount,
+          (index) => _loadedScreens[index] ?? const SizedBox.shrink(),
+          growable: false,
+        ),
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
@@ -127,6 +156,7 @@ class _MainShellState extends State<MainShell> {
     return GestureDetector(
       onTap: () {
         setState(() {
+          _ensureScreenLoaded(index);
           _currentIndex = index;
           TabRouter.switchTo(index);
         });

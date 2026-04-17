@@ -23,22 +23,18 @@ class ProfileScreen extends StatelessWidget {
       user = status.worker ?? User.empty(phone: status.phone);
     }
 
-    Map<String, dynamic> policy = <String, dynamic>{};
-    List<Claim> claims = const <Claim>[];
+    final results = await Future.wait<dynamic>([
+      _apiService.getPolicy('me').catchError((_) => <String, dynamic>{}),
+      _apiService.getClaims('me').catchError((_) => const <Claim>[]),
+      _apiService.getPayoutDashboard().catchError((_) => <String, dynamic>{}),
+    ]);
 
-    try {
-      policy = await _apiService.getPolicy('me');
-    } catch (_) {
-      policy = <String, dynamic>{};
-    }
-
-    try {
-      claims = await _apiService.getClaims('me');
-    } catch (_) {
-      claims = const <Claim>[];
-    }
-
-    return _ProfileViewData(user: user, policy: policy, claims: claims);
+    return _ProfileViewData(
+      user: user,
+      policy: results[0] as Map<String, dynamic>,
+      claims: results[1] as List<Claim>,
+      payoutDashboard: results[2] as Map<String, dynamic>,
+    );
   }
 
   @override
@@ -69,18 +65,26 @@ class ProfileScreen extends StatelessWidget {
         final user = data.user;
         final policy = data.policy;
         final claims = data.claims;
+        final payoutDashboard = data.payoutDashboard;
         final claimCountThisMonth = _claimCountForCurrentMonth(claims);
-        final settledPayout = _settledPayoutTotal(claims);
         final perTriggerPayout = _readInt(policy, const ['perTriggerPayout']);
         final activePlan = _readString(policy, const ['plan'], fallback: user.plan);
-        final locationLabel = _buildLocationLabel(user);
-        final policyStatusLabel =
-            _readString(policy, const ['status'], fallback: 'active').toLowerCase() == 'active'
-                ? 'Active policy'
-                : 'Policy update pending';
+        final weeklyPremium = _readInt(policy, const ['weeklyPremium']);
         final nextBillingDate = _readString(policy, const ['nextBillingDate']);
         final renewalLabel = _renewalLabel(nextBillingDate);
-        final contact = _formatPhone(user.phone);
+        final policyStatus = _readString(policy, const ['status'], fallback: 'active').toLowerCase();
+        final statusLabel = policyStatus == 'active'
+          ? 'Active policy'
+          : policyStatus == 'scheduled'
+            ? 'Plan change scheduled'
+            : 'Policy update pending';
+        final payoutSummary = _readMap(payoutDashboard, const ['summary']);
+        final settledTotal = _readDouble(payoutSummary, const ['settledTotal']);
+        final pendingTotal = _readDouble(payoutSummary, const ['pendingTotal']);
+        final primaryUpiMasked = _readString(payoutDashboard, const ['primaryUpiMasked']);
+        final provider = _readString(payoutDashboard, const ['provider']);
+        final notificationItems = _buildNotificationItems(policy);
+        final supportItems = _buildSupportItems(policy);
 
         return Scaffold(
           backgroundColor: AppColors.scaffoldBackground,
@@ -103,7 +107,7 @@ class ProfileScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _buildTopUtilityButtons(context),
+                      _buildTopUtilityButtons(context, notificationItems),
                       const SizedBox(height: 14),
                       const Text(
                         'Settings',
@@ -123,13 +127,6 @@ class ProfileScreen extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      _buildHeader(
-                        context,
-                        user,
-                        contact,
-                        policyStatusLabel,
-                        locationLabel,
-                      ),
                       _buildCoverageBanner(
                         perTriggerPayout: perTriggerPayout,
                         activePlan: activePlan,
@@ -150,7 +147,9 @@ class ProfileScreen extends StatelessWidget {
                           iconBg: const Color(0xFFE1F5EE),
                           iconColor: const Color(0xFF0F6E56),
                           title: 'Payouts',
-                          subtitle: '₹${NumberFormat('#,##0').format(settledPayout)} received',
+                          subtitle: pendingTotal > 0
+                              ? '₹${NumberFormat('#,##0').format(settledTotal)} settled, ₹${NumberFormat('#,##0').format(pendingTotal)} pending'
+                              : '₹${NumberFormat('#,##0').format(settledTotal)} settled',
                           onTap: () => _switchToTab(context, 3),
                         ),
                         _MenuItemData(
@@ -160,7 +159,9 @@ class ProfileScreen extends StatelessWidget {
                           title: 'Plans and pricing',
                           subtitle: activePlan.trim().isEmpty
                               ? 'Check available plans'
-                              : '$activePlan plan active',
+                              : weeklyPremium > 0
+                                  ? '$activePlan • ₹${NumberFormat('#,##0').format(weeklyPremium)}/week'
+                                  : '$activePlan plan active',
                           onTap: () => _switchToTab(context, 2),
                         ),
                       ]),
@@ -171,7 +172,9 @@ class ProfileScreen extends StatelessWidget {
                           iconBg: const Color(0xFFE1F5EE),
                           iconColor: const Color(0xFF0F6E56),
                           title: 'Payout settings',
-                          subtitle: 'Manage UPI accounts and statements',
+                          subtitle: primaryUpiMasked.isNotEmpty
+                              ? (provider.isNotEmpty ? '$provider • $primaryUpiMasked' : primaryUpiMasked)
+                              : (provider.isNotEmpty ? provider : 'No payout account returned'),
                           onTap: () => _switchToTab(context, 3),
                         ),
                         _MenuItemData(
@@ -179,7 +182,7 @@ class ProfileScreen extends StatelessWidget {
                           iconBg: const Color(0xFFFAEEDA),
                           iconColor: const Color(0xFF854F0B),
                           title: 'Coverage details',
-                          subtitle: 'Review active policy and trigger protection',
+                          subtitle: '$statusLabel • $renewalLabel',
                           onTap: () => _switchToTab(context, 2),
                         ),
                         _MenuItemData(
@@ -187,8 +190,8 @@ class ProfileScreen extends StatelessWidget {
                           iconBg: const Color(0xFFE1F5EE),
                           iconColor: const Color(0xFF0F6E56),
                           title: 'Help and support',
-                          subtitle: 'Contact help and review claim guidance',
-                          onTap: () => _showSupportSheet(context),
+                          subtitle: supportItems.isEmpty ? null : '${supportItems.length} live support entries',
+                          onTap: () => _showSupportSheet(context, supportItems),
                         ),
                       ]),
                       _buildSectionLabel('Account'),
@@ -303,7 +306,10 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildTopUtilityButtons(BuildContext context) {
+  Widget _buildTopUtilityButtons(
+    BuildContext context,
+    List<_SheetItemData> notificationItems,
+  ) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -313,7 +319,7 @@ class ProfileScreen extends StatelessWidget {
         ),
         _headerIconButton(
           icon: Icons.notifications_none,
-          onTap: () => _showNotificationsSheet(context),
+          onTap: () => _showNotificationsSheet(context, notificationItems),
         ),
       ],
     );
@@ -611,7 +617,7 @@ class ProfileScreen extends StatelessWidget {
 
   // ─── Actions ───────────────────────────────────────────────────────────────
 
-  void _showNotificationsSheet(BuildContext context) {
+  void _showNotificationsSheet(BuildContext context, List<_SheetItemData> items) {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -619,18 +625,15 @@ class ProfileScreen extends StatelessWidget {
         return ListView(
           shrinkWrap: true,
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
-          children: const [
-            ListTile(
-              leading: Icon(Icons.verified_outlined),
-              title: Text('Profile verification completed'),
-              subtitle: Text('Your account details are fully up to date'),
-            ),
-            ListTile(
-              leading: Icon(Icons.shield_outlined),
-              title: Text('Security reminder'),
-              subtitle: Text('Review device activity once every week'),
-            ),
-          ],
+          children: items
+              .map(
+                (item) => ListTile(
+                  leading: Icon(item.icon),
+                  title: Text(item.title),
+                  subtitle: Text(item.subtitle),
+                ),
+              )
+              .toList(),
         );
       },
     );
@@ -674,7 +677,7 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  void _showSupportSheet(BuildContext context) {
+  void _showSupportSheet(BuildContext context, List<_SheetItemData> items) {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -682,34 +685,136 @@ class ProfileScreen extends StatelessWidget {
         return ListView(
           shrinkWrap: true,
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
-          children: const [
+          children: [
             Text(
               'Help and support',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
             ),
             SizedBox(height: 12),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.call_outlined),
-              title: Text('Claims helpline'),
-              subtitle: Text('+91 1800 00 0000'),
-            ),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.mail_outline),
-              title: Text('Support email'),
-              subtitle: Text('support@saatdin.in'),
-            ),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.rule_folder_outlined),
-              title: Text('Escalation timeline'),
-              subtitle: Text('Manual escalations are reviewed within 2 hours.'),
-            ),
+            ...items
+                .map(
+                  (item) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(item.icon),
+                    title: Text(item.title),
+                    subtitle: Text(item.subtitle),
+                  ),
+                )
+                .toList(),
           ],
         );
       },
     );
+  }
+
+  List<_SheetItemData> _buildNotificationItems(Map<String, dynamic> policy) {
+    final rawItems = _readMapList(policy, const ['notifications', 'notificationItems']);
+    return rawItems
+        .map((item) {
+          final title = _readString(item, const ['title', 'heading']);
+          final subtitle = _readString(item, const ['subtitle', 'message', 'description']);
+          if (title.isEmpty || subtitle.isEmpty) return null;
+          return _SheetItemData(
+            icon: _iconFromName(_readString(item, const ['icon', 'iconName'])),
+            title: title,
+            subtitle: subtitle,
+          );
+        })
+        .whereType<_SheetItemData>()
+        .toList();
+  }
+
+  List<_SheetItemData> _buildSupportItems(Map<String, dynamic> policy) {
+    final support = _readMap(policy, const ['support']);
+    final items = <_SheetItemData>[];
+
+    final helpline = _readString(support, const ['helpline', 'phone']);
+    final email = _readString(support, const ['email', 'supportEmail']);
+    final timeline = _readString(support, const ['escalationTimeline', 'timeline']);
+
+    if (helpline.isNotEmpty) {
+      items.add(
+        _SheetItemData(
+          icon: Icons.call_outlined,
+          title: 'Claims helpline',
+          subtitle: helpline,
+        ),
+      );
+    }
+    if (email.isNotEmpty) {
+      items.add(
+        _SheetItemData(
+          icon: Icons.mail_outline,
+          title: 'Support email',
+          subtitle: email,
+        ),
+      );
+    }
+    if (timeline.isNotEmpty) {
+      items.add(
+        _SheetItemData(
+          icon: Icons.rule_folder_outlined,
+          title: 'Escalation timeline',
+          subtitle: timeline,
+        ),
+      );
+    }
+
+    final supportItems = _readMapList(support, const ['items']);
+    for (final item in supportItems) {
+      final title = _readString(item, const ['title', 'heading']);
+      final subtitle = _readString(item, const ['subtitle', 'message', 'description']);
+      if (title.isEmpty || subtitle.isEmpty) continue;
+      items.add(
+        _SheetItemData(
+          icon: _iconFromName(_readString(item, const ['icon', 'iconName'])),
+          title: title,
+          subtitle: subtitle,
+        ),
+      );
+    }
+
+    return items;
+  }
+
+  Map<String, dynamic> _readMap(Map<String, dynamic> raw, List<String> keys) {
+    for (final key in keys) {
+      final value = raw[key];
+      if (value is Map<String, dynamic>) return value;
+    }
+    return <String, dynamic>{};
+  }
+
+  List<Map<String, dynamic>> _readMapList(Map<String, dynamic> raw, List<String> keys) {
+    for (final key in keys) {
+      final value = raw[key];
+      if (value is List) {
+        return value.whereType<Map<String, dynamic>>().toList();
+      }
+    }
+    return const <Map<String, dynamic>>[];
+  }
+
+  IconData _iconFromName(String iconName) {
+    switch (iconName.trim().toLowerCase()) {
+      case 'verified':
+      case 'check':
+        return Icons.verified_outlined;
+      case 'shield':
+      case 'security':
+        return Icons.shield_outlined;
+      case 'call':
+      case 'phone':
+        return Icons.call_outlined;
+      case 'mail':
+      case 'email':
+        return Icons.mail_outline;
+      case 'timeline':
+      case 'rules':
+        return Icons.rule_folder_outlined;
+      default:
+        return Icons.info_outline;
+    }
   }
 
   void _showSimpleInfo(BuildContext context, String message) {
@@ -778,6 +883,23 @@ class ProfileScreen extends StatelessWidget {
       if (value is num) return value.toInt();
       if (value is String) {
         final parsed = int.tryParse(value.replaceAll(',', '').trim());
+        if (parsed != null) return parsed;
+      }
+    }
+    return fallback;
+  }
+
+  double _readDouble(
+    Map<String, dynamic> raw,
+    List<String> keys, {
+    double fallback = 0,
+  }) {
+    for (final key in keys) {
+      final value = raw[key];
+      if (value == null) continue;
+      if (value is num) return value.toDouble();
+      if (value is String) {
+        final parsed = double.tryParse(value.replaceAll(',', '').trim());
         if (parsed != null) return parsed;
       }
     }
@@ -858,16 +980,30 @@ class _MenuItemData {
   });
 }
 
+class _SheetItemData {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  const _SheetItemData({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+}
+
 class _ProfileViewData {
   const _ProfileViewData({
     required this.user,
     required this.policy,
     required this.claims,
+    required this.payoutDashboard,
   });
 
   final User user;
   final Map<String, dynamic> policy;
   final List<Claim> claims;
+  final Map<String, dynamic> payoutDashboard;
 }
 
 class _ProfileTopBackgroundPainter extends CustomPainter {

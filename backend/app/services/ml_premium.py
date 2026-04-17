@@ -111,6 +111,7 @@ def predict_dynamic_factor(
     """
     if not _model_trained or _premium_model is None or _feature_scaler is None or np is None:
         # Fallback: no dynamic adjustment
+        logger.warning("dynamic_pricing_factor_fallback_applied reason=model_unavailable factor=1.0")
         return 1.0
     
     try:
@@ -152,6 +153,7 @@ def get_dynamic_adjustment_with_fallback(
     """Get dynamic factor, with fallback to 1.0 (no adjustment) if ML unavailable."""
     if _model_trained:
         return predict_dynamic_factor(zone_data)
+    logger.warning("dynamic_pricing_factor_fallback_applied reason=model_not_trained factor=1.0")
     return 1.0
 
 

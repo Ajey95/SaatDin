@@ -21,29 +21,41 @@ class WorkerStatus {
 
 class ApiService {
   static String get baseUrl => _candidateBaseUrls.first;
+  static String? _preferredBaseUrl;
+  static const String _baseUrlStorageKey = 'saatdin_api_base_url';
   static List<String> get _candidateBaseUrls {
     const configuredBaseUrl = String.fromEnvironment('API_BASE_URL');
     if (configuredBaseUrl.isNotEmpty) {
       return [configuredBaseUrl];
     }
 
+    List<String> defaults;
+
     if (kIsWeb) {
-      return const [
+      defaults = const [
+        'http://localhost:8000/api/v1',
+        'http://localhost:8005/api/v1',
+      ];
+    } else if (defaultTargetPlatform == TargetPlatform.android) {
+      defaults = const [
+        'http://10.0.2.2:8000/api/v1',
+        'http://10.0.2.2:8005/api/v1',
+      ];
+    } else {
+      defaults = const [
         'http://localhost:8000/api/v1',
         'http://localhost:8005/api/v1',
       ];
     }
 
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      return const [
-        'http://10.0.2.2:8000/api/v1',
-        'http://10.0.2.2:8005/api/v1',
-      ];
+    final preferred = _preferredBaseUrl?.trim();
+    if (preferred == null || preferred.isEmpty) {
+      return defaults;
     }
 
-    return const [
-      'http://localhost:8000/api/v1',
-      'http://localhost:8005/api/v1',
+    return [
+      preferred,
+      ...defaults.where((candidate) => candidate != preferred),
     ];
   }
   static final ZoneRiskService _zoneRiskService = ZoneRiskService();
@@ -96,8 +108,12 @@ class ApiService {
   Future<void> initializeSession() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString(_tokenStorageKey)?.trim();
+    final preferredBaseUrl = prefs.getString(_baseUrlStorageKey)?.trim();
     if (token != null && token.isNotEmpty) {
       _accessToken = token;
+    }
+    if (preferredBaseUrl != null && preferredBaseUrl.isNotEmpty) {
+      _preferredBaseUrl = preferredBaseUrl;
     }
     _sessionInitialized = true;
   }
@@ -115,6 +131,11 @@ class ApiService {
   Future<void> _persistSessionToken(String token) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_tokenStorageKey, token);
+  }
+
+  Future<void> _persistPreferredBaseUrl(String baseUrl) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_baseUrlStorageKey, baseUrl);
   }
 
   Future<void> clearSession() async {
@@ -154,6 +175,8 @@ class ApiService {
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body) as Map<String, dynamic>;
           if (data['success'] == true) {
+            _preferredBaseUrl = candidate;
+            await _persistPreferredBaseUrl(candidate);
             return true;
           }
           errors.add(_messageFromBody(data, fallback: 'OTP send failed.'));
@@ -198,7 +221,9 @@ class ApiService {
           final payload = _extractData(data) as Map<String, dynamic>?;
           final token = (payload?['token'] as String?)?.trim();
           if (token != null && token.isNotEmpty) {
+            _preferredBaseUrl = candidate;
             _accessToken = token;
+            await _persistPreferredBaseUrl(candidate);
             await _persistSessionToken(token);
             return true;
           }

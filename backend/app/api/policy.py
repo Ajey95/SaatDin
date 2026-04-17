@@ -100,13 +100,22 @@ def _loyalty_discount_percent(clean_streak_weeks: int) -> float:
 def _coerce_week_start(raw_week_start: str | None) -> date:
     minimum_week_start = _next_week_start_utc(datetime.now(timezone.utc)).date()
     if not raw_week_start:
+        logger.info("policy_week_start_fallback_applied reason=missing_input week_start=%s", minimum_week_start.isoformat())
         return minimum_week_start
     try:
         parsed = date.fromisoformat(str(raw_week_start)[:10])
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid weekStartDate") from exc
     normalized = parsed - timedelta(days=parsed.weekday())
-    return normalized if normalized >= minimum_week_start else minimum_week_start
+    if normalized < minimum_week_start:
+        logger.info(
+            "policy_week_start_fallback_applied reason=past_cycle requested=%s normalized=%s fallback=%s",
+            str(raw_week_start),
+            normalized.isoformat(),
+            minimum_week_start.isoformat(),
+        )
+        return minimum_week_start
+    return normalized
 
 
 def _apply_loyalty_discount(weekly_premium: int, loyalty_discount_percent: float) -> int:
@@ -145,18 +154,38 @@ def _policy_cycle_context(worker: dict, now: datetime, paid_weeks: set[date]) ->
 def _build_policy(worker: dict, settled_total: float, payment_rows: list[dict]) -> PolicyOut:
     try:
         platform = Platform.from_input(str(worker.get("platform_name") or "swiggy_instamart"))
-    except HTTPException:
+    except HTTPException as exc:
+        logger.warning(
+            "policy_platform_fallback_applied phone=%s raw_platform=%s fallback_platform=%s reason=%s",
+            str(worker.get("phone") or "unknown"),
+            str(worker.get("platform_name") or ""),
+            Platform.swiggy_instamart.value,
+            str(exc.detail) if hasattr(exc, "detail") else str(exc),
+        )
         platform = Platform.swiggy_instamart
 
     zone_key = str(worker.get("zone_pincode") or worker.get("zone_name") or "560001")
     try:
         pincode, zone_data = resolve_zone(zone_key)
-    except HTTPException:
+    except HTTPException as exc:
+        logger.warning(
+            "policy_zone_fallback_applied phone=%s requested_zone=%s fallback_zone=%s reason=%s",
+            str(worker.get("phone") or "unknown"),
+            zone_key,
+            "560001",
+            str(exc.detail) if hasattr(exc, "detail") else str(exc),
+        )
         pincode, zone_data = resolve_zone("560001")
 
     plans = build_plans(float(zone_data.get("zone_risk_multiplier", 1.0)), platform, zone_data=zone_data)
     selected = next((plan for plan in plans if plan.name.lower() == str(worker.get("plan_name") or "").lower()), None)
     if not selected:
+        logger.warning(
+            "policy_plan_fallback_applied phone=%s requested_plan=%s fallback_plan=%s",
+            str(worker.get("phone") or "unknown"),
+            str(worker.get("plan_name") or ""),
+            plans[1].name,
+        )
         selected = plans[1]
 
     now = datetime.now(timezone.utc)
