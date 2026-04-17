@@ -1675,7 +1675,7 @@ async def upsert_worker_payout_accounts(
         SET
             payout_primary_upi = COALESCE(?, payout_primary_upi),
             payout_primary_verified = COALESCE(?, payout_primary_verified),
-            payout_backup_upi = ?,
+            payout_backup_upi = COALESCE(?, payout_backup_upi),
             payout_backup_verified = COALESCE(?, payout_backup_verified),
             updated_at = ?
         WHERE phone = ?
