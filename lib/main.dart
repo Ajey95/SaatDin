@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'theme/app_theme.dart';
+import 'theme/theme_controller.dart';
 import 'routes/app_routes.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await ThemeController.instance.initialize();
   if (!kIsWeb) {
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
@@ -20,12 +22,19 @@ class SaatDinApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'SaatDin',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
-      initialRoute: AppRoutes.onboarding,
-      routes: AppRoutes.routes,
+    return AnimatedBuilder(
+      animation: ThemeController.instance,
+      builder: (context, _) {
+        return MaterialApp(
+          title: 'SaatDin',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.lightTheme,
+          darkTheme: AppTheme.darkTheme,
+          themeMode: ThemeController.instance.themeMode,
+          initialRoute: AppRoutes.onboarding,
+          routes: AppRoutes.routes,
+        );
+      },
     );
   }
 }

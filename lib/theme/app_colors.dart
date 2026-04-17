@@ -59,4 +59,15 @@ class AppColors {
   // Bottom nav
   static const Color navActive = Color(0xFF14B890);
   static const Color navInactive = Color(0xFF7B8794);
+
+  // Rider-first dark surface palette.
+  static const Color nightBackground = Color(0xFF06090D);
+  static const Color nightSurface = Color(0xFF0D1117);
+  static const Color nightSurfaceElevated = Color(0xFF131A23);
+  static const Color nightBorder = Color(0xFF243041);
+  static const Color neonGreen = Color(0xFF58F0A9);
+  static const Color neonCyan = Color(0xFF56D7FF);
+  static const Color neonAmber = Color(0xFFFFC44D);
+  static const Color neonRed = Color(0xFFFF6A6A);
+  static const Color neonPurple = Color(0xFFB68CFF);
 }

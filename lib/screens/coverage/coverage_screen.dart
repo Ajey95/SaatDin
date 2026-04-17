@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:intl/intl.dart';
+import 'package:showcaseview/showcaseview.dart';
 
 import '../../models/claim_model.dart';
 import '../../models/plan_model.dart';
 import '../../models/user_model.dart';
 import '../../services/api_service.dart';
+import '../../services/guide_preferences.dart';
 import '../../services/policy_document_opener.dart';
 import '../../services/tab_router.dart';
 import '../../theme/app_colors.dart';
@@ -19,32 +22,12 @@ class CoverageScreen extends StatefulWidget {
 class _CoverageScreenState extends State<CoverageScreen> {
   static const String _policyDocumentAssetPath =
       'assets/documents/SaatDin Policy Document.pdf';
-  static const List<InsurancePlan> _defaultPlans = <InsurancePlan>[
-    InsurancePlan(
-      name: 'Starter',
-      weeklyPremium: 45,
-      perTriggerPayout: 280,
-      maxDaysPerWeek: 3,
-    ),
-    InsurancePlan(
-      name: 'Smart',
-      weeklyPremium: 70,
-      perTriggerPayout: 400,
-      maxDaysPerWeek: 4,
-      isPopular: true,
-    ),
-    InsurancePlan(
-      name: 'Pro',
-      weeklyPremium: 95,
-      perTriggerPayout: 520,
-      maxDaysPerWeek: 5,
-    ),
-  ];
 
   final ApiService _apiService = ApiService();
-  List<InsurancePlan> _plans = List<InsurancePlan>.from(_defaultPlans);
+  final GlobalKey _guideTierKey = GlobalKey();
+  List<InsurancePlan> _plans = const <InsurancePlan>[];
   List<Claim> _claims = const <Claim>[];
-  User _user = const User.empty();
+  User? _user;
   String _activePlanName = '';
   int _activeWeeklyPremium = 0;
   int _activePerTriggerPayout = 0;
@@ -52,10 +35,12 @@ class _CoverageScreenState extends State<CoverageScreen> {
   String? _pendingPlanName;
   String? _pendingEffectiveDate;
   String? _tierConsistencyWarning;
-  String? _dataSyncNotice;
   int? _backendCleanStreakWeeks;
   double? _backendLoyaltyDiscountPercent;
   bool _isLoading = true;
+  bool _shouldShowGuide = false;
+  bool _guidePreferenceResolved = false;
+  bool _guideStarted = false;
   int _currentTierIndex = 1;
   int _selectedTierIndex = 1;
   int _simulatorIndex = 1;
@@ -104,6 +89,28 @@ class _CoverageScreenState extends State<CoverageScreen> {
   void initState() {
     super.initState();
     _loadCoverageData();
+    unawaited(_resolveGuidePreference());
+  }
+
+  Future<void> _resolveGuidePreference() async {
+    final shouldShow = await GuidePreferences.shouldShow(
+      GuidePreferences.coverageGuideSeen,
+    );
+    if (!mounted) return;
+    setState(() {
+      _shouldShowGuide = shouldShow;
+      _guidePreferenceResolved = true;
+    });
+  }
+
+  void _maybeStartGuide(BuildContext context) {
+    if (!_guidePreferenceResolved || !_shouldShowGuide || _guideStarted) return;
+    _guideStarted = true;
+    unawaited(GuidePreferences.markSeen(GuidePreferences.coverageGuideSeen));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ShowCaseWidget.of(context).startShowCase([_guideTierKey]);
+    });
   }
 
   Future<void> _loadCoverageData() async {
@@ -112,55 +119,24 @@ class _CoverageScreenState extends State<CoverageScreen> {
     });
 
     try {
-      var user = _user;
-      var plans = List<InsurancePlan>.from(_plans.isEmpty ? _defaultPlans : _plans);
-      var claims = List<Claim>.from(_claims);
-      var policy = <String, dynamic>{};
-      String? syncNotice;
-
-      try {
-        user = await _apiService.getProfile('me');
-      } catch (error) {
-        syncNotice = _isAuthRelatedError(error)
-            ? 'Live policy data unavailable. Showing standard coverage until you sign in.'
-            : 'Could not refresh live policy data. Showing standard coverage.';
-      }
-
-      try {
-        policy = await _apiService.getPolicy('me');
-      } catch (_) {
-        syncNotice ??= 'Using standard coverage values while live policy sync is unavailable.';
-      }
-
-      final planZone = user.zonePincode.trim().isNotEmpty ? user.zonePincode : user.zone;
-      final planPlatform = user.platform.trim();
-      if (planZone.isNotEmpty && planPlatform.isNotEmpty) {
-        try {
-          final fetchedPlans = await _apiService.getPlans(zone: planZone, platform: planPlatform);
-          if (fetchedPlans.isNotEmpty) {
-            plans = fetchedPlans;
-          }
-        } catch (_) {
-          syncNotice ??= 'Using standard plan tiers while live plans sync is unavailable.';
-        }
-      }
-
-      try {
-        claims = await _apiService.getClaims('me');
-      } catch (_) {
-        // Keep claim history optional so the screen can still render.
-      }
-
-      final activePlanName = _coerceString(
-        policy['plan'],
-        fallback: _coerceString(user.plan, fallback: plans.first.name),
+      final user = await _apiService.getProfile('me');
+      final policy = await _apiService.getPolicy('me');
+      final planZone = user.zonePincode.trim().isNotEmpty
+          ? user.zonePincode
+          : user.zone;
+      final plans = await _apiService.getPlans(
+        zone: planZone,
+        platform: user.platform,
       );
-      final activeWeeklyPremium =
-          (policy['weeklyPremium'] as num?)?.toInt() ?? plans.first.weeklyPremium;
-      final activePerTriggerPayout =
-          (policy['perTriggerPayout'] as num?)?.toInt() ?? plans.first.perTriggerPayout;
-      final activeMaxDaysPerWeek =
-          (policy['maxDaysPerWeek'] as num?)?.toInt() ?? plans.first.maxDaysPerWeek;
+      final claims = await _apiService.getClaims('me');
+
+      final activePlanName = _coerceString(policy['plan'], fallback: user.plan);
+      final activeWeeklyPremium = (policy['weeklyPremium'] as num? ?? 0)
+          .toInt();
+      final activePerTriggerPayout = (policy['perTriggerPayout'] as num? ?? 0)
+          .toInt();
+      final activeMaxDaysPerWeek = (policy['maxDaysPerWeek'] as num? ?? 0)
+          .toInt();
 
       var currentIndex = plans.indexWhere(
         (p) => p.name.toLowerCase() == activePlanName.toLowerCase(),
@@ -168,7 +144,6 @@ class _CoverageScreenState extends State<CoverageScreen> {
       if (currentIndex < 0) {
         currentIndex = 0;
       }
-      final safeCurrentIndex = _clampIndex(currentIndex, plans.length);
 
       final pendingPlanName = _coerceString(policy['pendingPlan']);
       final hasActiveTierMismatch =
@@ -197,13 +172,24 @@ class _CoverageScreenState extends State<CoverageScreen> {
         _pendingPlanName = policy['pendingPlan'] as String?;
         _pendingEffectiveDate = policy['pendingEffectiveDate'] as String?;
         _tierConsistencyWarning = tierConsistencyWarning;
-        _dataSyncNotice = syncNotice;
-        _backendCleanStreakWeeks = (policy['cleanStreakWeeks'] as num?)?.toInt();
-        _backendLoyaltyDiscountPercent = (policy['loyaltyDiscountPercent'] as num?)?.toDouble();
-        _currentTierIndex = safeCurrentIndex;
-        _selectedTierIndex = safeCurrentIndex;
-        _simulatorIndex = safeCurrentIndex;
+        _backendCleanStreakWeeks = (policy['cleanStreakWeeks'] as num?)
+            ?.toInt();
+        _backendLoyaltyDiscountPercent =
+            (policy['loyaltyDiscountPercent'] as num?)?.toDouble();
+        _currentTierIndex = currentIndex;
+        _selectedTierIndex = currentIndex;
+        _simulatorIndex = currentIndex;
       });
+    } catch (error) {
+      if (mounted) {
+        if (!_isAuthRelatedError(error)) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not refresh coverage details.'),
+            ),
+          );
+        }
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -224,434 +210,509 @@ class _CoverageScreenState extends State<CoverageScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final pageBackground = isDark
+        ? AppColors.nightBackground
+        : AppColors.scaffoldBackground;
+
     if (_isLoading) {
-      return const Scaffold(
-        backgroundColor: AppColors.scaffoldBackground,
+      return Scaffold(
+        backgroundColor: pageBackground,
         body: Center(child: CircularProgressIndicator()),
       );
     }
 
     final user = _user;
-    final selectedTierIndex = _clampIndex(_selectedTierIndex, _plans.length);
-    final currentTierIndex = _clampIndex(_currentTierIndex, _plans.length);
-    final simulatorIndex = _clampIndex(_simulatorIndex, _plans.length);
-    final selectedPlan = _plans[selectedTierIndex];
-    final estimatedPremium = _calculateEstimatedPremium();
-
-    return Scaffold(
-      backgroundColor: AppColors.scaffoldBackground,
-      body: Stack(
-        children: [
-          const Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: SizedBox(
-              height: 210,
-              child: CustomPaint(
-                painter: _CoverageTopBackgroundPainter(),
-              ),
+    if (user == null || _plans.isEmpty) {
+      return Scaffold(
+        backgroundColor: pageBackground,
+        body: Center(
+          child: Text(
+            'Coverage data unavailable. Please retry.',
+            style: TextStyle(
+              color: isDark ? Colors.white70 : AppColors.textSecondary,
             ),
           ),
-          SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildTopUtilityButtons(user),
-                  const SizedBox(height: 14),
-                  const Text(
-                    'Coverage',
-                    style: TextStyle(
-                      fontSize: 30,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.textPrimary,
-                      letterSpacing: -0.4,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    'Understand what you pay for and manage policy week to week.',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                  if (_dataSyncNotice != null && _dataSyncNotice!.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    _buildDataSyncNotice(_dataSyncNotice!),
-                  ],
-                  const SizedBox(height: 18),
-              const _CoverageSectionHeader('Tier Selector'),
-              const SizedBox(height: 10),
-              if (_tierConsistencyWarning != null && _tierConsistencyWarning!.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: _buildTierConsistencyWarning(_tierConsistencyWarning!),
-                ),
-              if (_pendingPlanName != null && _pendingPlanName!.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: _buildPendingPlanNotice(),
-                ),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: _buildCurrentPlanLimitsCard(),
-              ),
-              ..._plans.asMap().entries.map(
-                (entry) {
-                  final index = entry.key;
-                  final plan = entry.value;
-                  final isCurrent = index == currentTierIndex;
-                  final isSelected = index == selectedTierIndex;
+        ),
+      );
+    }
 
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(16),
-                      onTap: () {
-                        setState(() {
-                          _selectedTierIndex = index;
-                          _simulatorIndex = index;
-                        });
-                      },
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? AppColors.cardSelectedBackground
-                              : AppColors.cardBackground,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: isSelected
-                                ? AppColors.cardSelectedBorder
-                                : AppColors.border,
-                            width: isSelected ? 1.4 : 1,
+    final selectedPlan = _plans[_selectedTierIndex];
+    final estimatedPremium = _calculateEstimatedPremium();
+
+    return ShowCaseWidget(
+      builder: (guideContext) {
+        _maybeStartGuide(guideContext);
+        return Scaffold(
+          backgroundColor: pageBackground,
+          body: Stack(
+            children: [
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: SizedBox(
+                  height: 210,
+                  child: CustomPaint(
+                    painter: _CoverageTopBackgroundPainter(isDark: isDark),
+                  ),
+                ),
+              ),
+              SafeArea(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildTopUtilityButtons(user),
+                      const SizedBox(height: 14),
+                      Text(
+                        'Coverage',
+                        style: TextStyle(
+                          fontSize: 30,
+                          fontWeight: FontWeight.w800,
+                          color: isDark ? Colors.white : AppColors.textPrimary,
+                          letterSpacing: -0.4,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Understand what you pay for and manage policy week to week.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: isDark
+                              ? Colors.white70
+                              : AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Showcase(
+                        key: _guideTierKey,
+                        title: 'Tier Selector',
+                        description:
+                            'Compare plans, check current limits, and pick the best tier before requesting changes.',
+                        child: const _CoverageSectionHeader('Tier Selector'),
+                      ),
+                      const SizedBox(height: 10),
+                      if (_tierConsistencyWarning != null &&
+                          _tierConsistencyWarning!.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _buildTierConsistencyWarning(
+                            _tierConsistencyWarning!,
                           ),
                         ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                      if (_pendingPlanName != null &&
+                          _pendingPlanName!.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _buildPendingPlanNotice(),
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _buildCurrentPlanLimitsCard(),
+                      ),
+                      ..._plans.asMap().entries.map((entry) {
+                        final index = entry.key;
+                        final plan = entry.value;
+                        final isCurrent = index == _currentTierIndex;
+                        final isSelected = index == _selectedTierIndex;
+
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(16),
+                            onTap: () {
+                              setState(() {
+                                _selectedTierIndex = index;
+                                _simulatorIndex = index;
+                              });
+                            },
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? (isDark
+                                          ? AppColors.neonGreen.withValues(
+                                              alpha: 0.12,
+                                            )
+                                          : AppColors.cardSelectedBackground)
+                                    : (isDark
+                                          ? AppColors.nightSurface
+                                          : AppColors.cardBackground),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: isSelected
+                                      ? (isDark
+                                            ? AppColors.neonGreen
+                                            : AppColors.cardSelectedBorder)
+                                      : (isDark
+                                            ? AppColors.nightBorder
+                                            : AppColors.border),
+                                  width: isSelected ? 1.4 : 1,
+                                ),
+                              ),
+                              child: Row(
                                 children: [
-                                  Row(
-                                    children: [
-                                      Text(
-                                        plan.name,
-                                        style: const TextStyle(
-                                          fontSize: 17,
-                                          fontWeight: FontWeight.w700,
-                                          color: AppColors.textPrimary,
-                                        ),
-                                      ),
-                                      if (isCurrent) ...[
-                                        const SizedBox(width: 8),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 3,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: AppColors.successLight,
-                                            borderRadius: BorderRadius.circular(999),
-                                          ),
-                                          child: const Text(
-                                            'Current',
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w700,
-                                              color: AppColors.success,
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Text(
+                                              plan.name,
+                                              style: TextStyle(
+                                                fontSize: 17,
+                                                fontWeight: FontWeight.w700,
+                                                color: isDark
+                                                    ? Colors.white
+                                                    : AppColors.textPrimary,
+                                              ),
                                             ),
+                                            if (isCurrent) ...[
+                                              const SizedBox(width: 8),
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 3,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: AppColors.successLight,
+                                                  borderRadius:
+                                                      BorderRadius.circular(
+                                                        999,
+                                                      ),
+                                                ),
+                                                child: const Text(
+                                                  'Current',
+                                                  style: TextStyle(
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: AppColors.success,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          'Est. weekly premium: Rs ${plan.weeklyPremium}',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: isDark
+                                                ? Colors.white70
+                                                : AppColors.textSecondary,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          'Per-trigger payout: Rs ${plan.perTriggerPayout}',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: isDark
+                                                ? Colors.white70
+                                                : AppColors.textSecondary,
                                           ),
                                         ),
                                       ],
-                                    ],
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    'Est. weekly premium: Rs ${plan.weeklyPremium}',
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                      color: AppColors.textSecondary,
                                     ),
                                   ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'Per-trigger payout: Rs ${plan.perTriggerPayout}',
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                      color: AppColors.textSecondary,
-                                    ),
+                                  Icon(
+                                    isSelected
+                                        ? Icons.radio_button_checked
+                                        : Icons.radio_button_off,
+                                    color: isSelected
+                                        ? AppColors.primary
+                                        : AppColors.textTertiary,
                                   ),
                                 ],
                               ),
                             ),
-                            Icon(
-                              isSelected
-                                  ? Icons.radio_button_checked
-                                  : Icons.radio_button_off,
-                              color: isSelected
-                                  ? AppColors.primary
-                                  : AppColors.textTertiary,
+                          ),
+                        );
+                      }),
+                      const SizedBox(height: 2),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: _selectedTierIndex == _currentTierIndex
+                              ? null
+                              : () async {
+                                  try {
+                                    final policy = await _apiService
+                                        .updatePolicyPlan(selectedPlan.name);
+                                    if (!context.mounted) return;
+                                    final pendingPlan =
+                                        policy['pendingPlan'] as String?;
+                                    final pendingEffectiveDate =
+                                        policy['pendingEffectiveDate']
+                                            as String?;
+                                    setState(() {
+                                      _pendingPlanName = pendingPlan;
+                                      _pendingEffectiveDate =
+                                          pendingEffectiveDate;
+                                    });
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          pendingEffectiveDate == null
+                                              ? '${selectedPlan.name} plan will apply next week.'
+                                              : '${selectedPlan.name} plan will apply from $pendingEffectiveDate.',
+                                        ),
+                                      ),
+                                    );
+                                  } catch (_) {
+                                    if (!context.mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Policy update failed. Please verify login and retry.',
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            disabledBackgroundColor: AppColors.border,
+                            disabledForegroundColor: AppColors.textSecondary,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          child: Text(
+                            _selectedTierIndex == _currentTierIndex
+                                ? 'Current tier active'
+                                : 'Switch to ${selectedPlan.name}',
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      const _CoverageSectionHeader('Premium Breakdown'),
+                      const SizedBox(height: 10),
+                      _buildCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _breakdownRow('Base', 'Rs 45.00'),
+                            const SizedBox(height: 8),
+                            _breakdownRow(
+                              'Zone risk (Bellandur 1.3x)',
+                              'x 1.30',
+                            ),
+                            const SizedBox(height: 8),
+                            _breakdownRow('Platform (Blinkit 1.1x)', 'x 1.10'),
+                            const SizedBox(height: 8),
+                            _breakdownRow(
+                              'Loyalty discount (${_loyaltyDiscountPercent.toStringAsFixed(0)}%)',
+                              '- ${_loyaltyDiscountPercent.toStringAsFixed(0)}%',
+                            ),
+                            const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 10),
+                              child: Divider(
+                                height: 1,
+                                color: AppColors.border,
+                              ),
+                            ),
+                            _breakdownRow(
+                              'Estimated weekly premium',
+                              'Rs ${_currencyFormat.format(estimatedPremium)}',
+                              emphasize: true,
                             ),
                           ],
                         ),
                       ),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 2),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: selectedTierIndex == currentTierIndex
-                      ? null
-                      : () async {
-                          try {
-                            final policy = await _apiService.updatePolicyPlan(selectedPlan.name);
-                            if (!context.mounted) return;
-                            final pendingPlan = policy['pendingPlan'] as String?;
-                            final pendingEffectiveDate = policy['pendingEffectiveDate'] as String?;
-                            setState(() {
-                              _pendingPlanName = pendingPlan;
-                              _pendingEffectiveDate = pendingEffectiveDate;
-                            });
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  pendingEffectiveDate == null
-                                      ? '${selectedPlan.name} plan will start with the next weekly cycle.'
-                                      : '${selectedPlan.name} plan starts on $pendingEffectiveDate.',
+                      const SizedBox(height: 20),
+                      const _CoverageSectionHeader('Trigger Explainer'),
+                      const SizedBox(height: 10),
+                      _buildCard(
+                        child: Column(
+                          children: _triggers
+                              .map(
+                                (trigger) => Theme(
+                                  data: Theme.of(
+                                    context,
+                                  ).copyWith(dividerColor: Colors.transparent),
+                                  child: ExpansionTile(
+                                    tilePadding: EdgeInsets.zero,
+                                    childrenPadding: const EdgeInsets.only(
+                                      bottom: 12,
+                                    ),
+                                    title: Text(
+                                      trigger.title,
+                                      style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                    ),
+                                    children: [
+                                      _triggerDetail('Cause', trigger.cause),
+                                      const SizedBox(height: 6),
+                                      _triggerDetail(
+                                        'Threshold',
+                                        trigger.threshold,
+                                      ),
+                                      const SizedBox(height: 6),
+                                      _triggerDetail(
+                                        'Payout',
+                                        'Rs ${_currencyFormat.format(trigger.payout)}',
+                                      ),
+                                      const SizedBox(height: 6),
+                                      _triggerDetail(
+                                        'Last triggered in your zone',
+                                        '${trigger.lastTriggered}, Rs ${_currencyFormat.format(trigger.payout)} paid',
+                                        accent: true,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _buildCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'For complete terms and conditions, please refer to the policy document.',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: AppColors.textSecondary,
+                                height: 1.4,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            TextButton.icon(
+                              onPressed: _openPolicyDocument,
+                              icon: const Icon(
+                                Icons.picture_as_pdf_outlined,
+                                size: 18,
+                              ),
+                              label: const Text('View policy document'),
+                              style: TextButton.styleFrom(
+                                foregroundColor: AppColors.primary,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 0,
+                                  vertical: 4,
                                 ),
                               ),
-                            );
-                          } catch (_) {
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Policy update failed. Please verify login and retry.'),
-                              ),
-                            );
-                          }
-                        },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: AppColors.border,
-                    disabledForegroundColor: AppColors.textSecondary,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                  child: Text(
-                    selectedTierIndex == currentTierIndex
-                        ? 'Current tier active'
-                        : 'Switch to ${selectedPlan.name}',
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              const _CoverageSectionHeader('Premium Breakdown'),
-              const SizedBox(height: 10),
-              _buildCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _breakdownRow('Base', 'Rs 45.00'),
-                    const SizedBox(height: 8),
-                    _breakdownRow('Zone risk (Bellandur 1.3x)', 'x 1.30'),
-                    const SizedBox(height: 8),
-                    _breakdownRow('Platform (Blinkit 1.1x)', 'x 1.10'),
-                    const SizedBox(height: 8),
-                    _breakdownRow(
-                      'Loyalty discount (${_loyaltyDiscountPercent.toStringAsFixed(0)}%)',
-                      '- ${_loyaltyDiscountPercent.toStringAsFixed(0)}%',
-                    ),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 10),
-                      child: Divider(height: 1, color: AppColors.border),
-                    ),
-                    _breakdownRow(
-                      'Estimated weekly premium',
-                      'Rs ${_currencyFormat.format(estimatedPremium)}',
-                      emphasize: true,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-              const _CoverageSectionHeader('Trigger Explainer'),
-              const SizedBox(height: 10),
-              _buildCard(
-                child: Column(
-                  children: _triggers
-                      .map(
-                        (trigger) => Theme(
-                          data: Theme.of(context).copyWith(
-                            dividerColor: Colors.transparent,
-                          ),
-                          child: ExpansionTile(
-                            tilePadding: EdgeInsets.zero,
-                            childrenPadding: const EdgeInsets.only(bottom: 12),
-                            title: Text(
-                              trigger.title,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      const _CoverageSectionHeader('Loyalty Tracker'),
+                      const SizedBox(height: 10),
+                      _buildCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _loyaltyHeadline,
                               style: const TextStyle(
-                                fontSize: 15,
+                                fontSize: 14,
                                 fontWeight: FontWeight.w700,
                                 color: AppColors.textPrimary,
                               ),
                             ),
-                            children: [
-                              _triggerDetail('Cause', trigger.cause),
-                              const SizedBox(height: 6),
-                              _triggerDetail('Threshold', trigger.threshold),
-                              const SizedBox(height: 6),
-                              _triggerDetail(
-                                'Payout',
-                                'Rs ${_currencyFormat.format(trigger.payout)}',
+                            const SizedBox(height: 8),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(999),
+                              child: LinearProgressIndicator(
+                                minHeight: 8,
+                                value: _loyaltyProgress,
+                                backgroundColor: AppColors.borderLight,
+                                valueColor: const AlwaysStoppedAnimation<Color>(
+                                  AppColors.primary,
+                                ),
                               ),
-                              const SizedBox(height: 6),
-                              _triggerDetail(
-                                'Last triggered in your zone',
-                                '${trigger.lastTriggered}, Rs ${_currencyFormat.format(trigger.payout)} paid',
-                                accent: true,
-                              ),
-                            ],
-                          ),
-                        ),
-                      )
-                      .toList(),
-                ),
-              ),
-              const SizedBox(height: 10),
-              _buildCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'For complete terms and conditions, please refer to the policy document.',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: AppColors.textSecondary,
-                        height: 1.4,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextButton.icon(
-                      onPressed: _openPolicyDocument,
-                      icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
-                      label: const Text('View policy document'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: AppColors.primary,
-                        padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 4),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-              const _CoverageSectionHeader('Loyalty Tracker'),
-              const SizedBox(height: 10),
-              _buildCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _loyaltyHeadline,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(999),
-                      child: LinearProgressIndicator(
-                        minHeight: 8,
-                        value: _loyaltyProgress,
-                        backgroundColor: AppColors.borderLight,
-                        valueColor:
-                            const AlwaysStoppedAnimation<Color>(AppColors.primary),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      _loyaltySubtext,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-              const _CoverageSectionHeader('What-if Simulator'),
-              const SizedBox(height: 10),
-              _buildCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Selected tier: ${_plans[simulatorIndex].name}',
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    Slider(
-                      value: simulatorIndex.toDouble(),
-                      min: 0,
-                      max: (_plans.length - 1).toDouble(),
-                      divisions: _plans.length > 1 ? _plans.length - 1 : null,
-                      label: _plans[simulatorIndex].name,
-                      activeColor: AppColors.primary,
-                      onChanged: (value) {
-                        setState(() {
-                          _simulatorIndex = value.round();
-                        });
-                      },
-                    ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: _plans
-                          .map(
-                            (plan) => Text(
-                              plan.name,
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              _loyaltySubtext,
                               style: const TextStyle(
                                 fontSize: 12,
                                 color: AppColors.textSecondary,
                               ),
                             ),
-                          )
-                          .toList(),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'If you had been on ${_plans[simulatorIndex].name} last month, your estimated payout would have been Rs ${_currencyFormat.format(_simulatedPayout(simulatorIndex))}.',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: AppColors.textPrimary,
-                        height: 1.4,
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 20),
+                      const _CoverageSectionHeader('What-if Simulator'),
+                      const SizedBox(height: 10),
+                      _buildCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Selected tier: ${_plans[_simulatorIndex].name}',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            Slider(
+                              value: _simulatorIndex.toDouble(),
+                              min: 0,
+                              max: (_plans.length - 1).toDouble(),
+                              divisions: _plans.length > 1
+                                  ? _plans.length - 1
+                                  : null,
+                              label: _plans[_simulatorIndex].name,
+                              activeColor: AppColors.primary,
+                              onChanged: (value) {
+                                setState(() {
+                                  _simulatorIndex = value.round();
+                                });
+                              },
+                            ),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: _plans
+                                  .map(
+                                    (plan) => Text(
+                                      plan.name,
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'If you had been on ${_plans[_simulatorIndex].name} last month, your estimated payout would have been Rs ${_currencyFormat.format(_simulatedPayout(_simulatorIndex))}.',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: AppColors.textPrimary,
+                                height: 1.4,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-                ],
-              ),
-            ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -753,46 +814,7 @@ class _CoverageScreenState extends State<CoverageScreen> {
 
   double _calculateEstimatedPremium() {
     if (_plans.isEmpty) return 0;
-    final safeIndex = _clampIndex(_selectedTierIndex, _plans.length);
-    return _plans[safeIndex].weeklyPremium.toDouble();
-  }
-
-  int _clampIndex(int index, int length) {
-    if (length <= 0) return 0;
-    return index.clamp(0, length - 1).toInt();
-  }
-
-  Widget _buildDataSyncNotice(String message) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppColors.infoLight,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.info.withValues(alpha: 0.28)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.only(top: 1),
-            child: Icon(Icons.info_outline, color: AppColors.info, size: 16),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              message,
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppColors.textPrimary,
-                fontWeight: FontWeight.w600,
-                height: 1.35,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+    return _plans[_selectedTierIndex].weeklyPremium.toDouble();
   }
 
   int _simulatedPayout(int tierIndex) {
@@ -809,10 +831,14 @@ class _CoverageScreenState extends State<CoverageScreen> {
   }
 
   Widget _buildPendingPlanNotice() {
+    final theme = Theme.of(context);
+    final primaryText = theme.colorScheme.onSurface;
     final safePendingDate = _coerceString(_pendingEffectiveDate);
     final effectiveText = safePendingDate.isEmpty
         ? 'next week'
-        : DateFormat('d MMM').format(DateTime.tryParse(safePendingDate) ?? DateTime.now());
+        : DateFormat(
+            'd MMM',
+          ).format(DateTime.tryParse(safePendingDate) ?? DateTime.now());
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -823,9 +849,9 @@ class _CoverageScreenState extends State<CoverageScreen> {
       ),
       child: Text(
         'Pending change: $_pendingPlanName will become active on $effectiveText. Your current week coverage stays unchanged.',
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 12,
-          color: AppColors.textPrimary,
+          color: primaryText,
           fontWeight: FontWeight.w600,
           height: 1.35,
         ),
@@ -834,6 +860,8 @@ class _CoverageScreenState extends State<CoverageScreen> {
   }
 
   Widget _buildTierConsistencyWarning(String message) {
+    final theme = Theme.of(context);
+    final primaryText = theme.colorScheme.onSurface;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -847,15 +875,19 @@ class _CoverageScreenState extends State<CoverageScreen> {
         children: [
           const Padding(
             padding: EdgeInsets.only(top: 1),
-            child: Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 16),
+            child: Icon(
+              Icons.warning_amber_rounded,
+              color: AppColors.error,
+              size: 16,
+            ),
           ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               message,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
-                color: AppColors.textPrimary,
+                color: primaryText,
                 fontWeight: FontWeight.w600,
                 height: 1.35,
               ),
@@ -867,32 +899,44 @@ class _CoverageScreenState extends State<CoverageScreen> {
   }
 
   Widget _buildCurrentPlanLimitsCard() {
-    final activeName = _activePlanName.isEmpty ? 'Current plan' : _activePlanName;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final primaryText = theme.colorScheme.onSurface;
+    final secondaryText = theme.colorScheme.onSurface.withValues(
+      alpha: isDark ? 0.70 : 0.78,
+    );
+    final activeName = _activePlanName.isEmpty
+        ? 'Current plan'
+        : _activePlanName;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: AppColors.infoLight,
+        color: isDark
+            ? AppColors.info.withValues(alpha: 0.16)
+            : AppColors.infoLight,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.info.withValues(alpha: 0.28)),
+        border: Border.all(
+          color: AppColors.info.withValues(alpha: isDark ? 0.42 : 0.28),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             '$activeName limits active this week',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
-              color: AppColors.textPrimary,
+              color: primaryText,
               fontWeight: FontWeight.w700,
             ),
           ),
           const SizedBox(height: 5),
           Text(
             'Premium: Rs $_activeWeeklyPremium · Per trigger: Rs $_activePerTriggerPayout · Max days/week: $_activeMaxDaysPerWeek',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
-              color: AppColors.textSecondary,
+              color: secondaryText,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -924,7 +968,9 @@ class _CoverageScreenState extends State<CoverageScreen> {
 
     var streak = 0;
     for (var weekOffset = 0; weekOffset < 12; weekOffset++) {
-      final weekStart = today.subtract(Duration(days: today.weekday - 1 + (weekOffset * 7)));
+      final weekStart = today.subtract(
+        Duration(days: today.weekday - 1 + (weekOffset * 7)),
+      );
       final weekEnd = weekStart.add(const Duration(days: 7));
       final hasClaimThisWeek = claimDates.any(
         (date) => !date.isBefore(weekStart) && date.isBefore(weekEnd),
@@ -986,7 +1032,11 @@ class _CoverageScreenState extends State<CoverageScreen> {
 
   String _userInitials(String? name) {
     final safeName = _coerceString(name);
-    final parts = safeName.trim().split(' ').where((p) => p.isNotEmpty).toList();
+    final parts = safeName
+        .trim()
+        .split(' ')
+        .where((p) => p.isNotEmpty)
+        .toList();
     if (parts.isEmpty) return 'U';
     if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
     return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
@@ -1043,7 +1093,10 @@ class _CoverageScreenState extends State<CoverageScreen> {
                   backgroundColor: AppColors.primary,
                   child: Text(
                     _userInitials(safeName),
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
                 title: Text(safeName),
@@ -1093,19 +1146,23 @@ class _CoverageScreenState extends State<CoverageScreen> {
   }
 
   Widget _buildCard({required Widget child}) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.cardBackground,
+        color: isDark ? AppColors.nightSurface : AppColors.cardBackground,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(
+          color: isDark ? AppColors.nightBorder : AppColors.border,
+        ),
       ),
       child: child,
     );
   }
 
   Widget _breakdownRow(String label, String value, {bool emphasize = false}) {
+    final primaryText = Theme.of(context).colorScheme.onSurface;
     return Row(
       children: [
         Expanded(
@@ -1114,7 +1171,7 @@ class _CoverageScreenState extends State<CoverageScreen> {
             style: TextStyle(
               fontSize: 13,
               fontWeight: emphasize ? FontWeight.w700 : FontWeight.w500,
-              color: AppColors.textPrimary,
+              color: primaryText,
             ),
           ),
         ),
@@ -1123,7 +1180,7 @@ class _CoverageScreenState extends State<CoverageScreen> {
           style: TextStyle(
             fontSize: 13,
             fontWeight: emphasize ? FontWeight.w800 : FontWeight.w600,
-            color: AppColors.textPrimary,
+            color: primaryText,
           ),
         ),
       ],
@@ -1131,6 +1188,11 @@ class _CoverageScreenState extends State<CoverageScreen> {
   }
 
   Widget _triggerDetail(String label, String value, {bool accent = false}) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryText = Theme.of(context).colorScheme.onSurface;
+    final secondaryText = Theme.of(
+      context,
+    ).colorScheme.onSurface.withValues(alpha: isDark ? 0.72 : 0.80);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1138,10 +1200,7 @@ class _CoverageScreenState extends State<CoverageScreen> {
           width: 130,
           child: Text(
             '$label:',
-            style: const TextStyle(
-              fontSize: 12,
-              color: AppColors.textSecondary,
-            ),
+            style: TextStyle(fontSize: 12, color: secondaryText),
           ),
         ),
         Expanded(
@@ -1149,7 +1208,7 @@ class _CoverageScreenState extends State<CoverageScreen> {
             value,
             style: TextStyle(
               fontSize: 12,
-              color: accent ? AppColors.primary : AppColors.textPrimary,
+              color: accent ? AppColors.primary : primaryText,
               fontWeight: accent ? FontWeight.w600 : FontWeight.w500,
             ),
           ),
@@ -1166,12 +1225,13 @@ class _CoverageSectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final primaryText = Theme.of(context).colorScheme.onSurface;
     return Text(
       title,
-      style: const TextStyle(
+      style: TextStyle(
         fontSize: 16,
         fontWeight: FontWeight.w700,
-        color: AppColors.textPrimary,
+        color: primaryText,
       ),
     );
   }
@@ -1194,19 +1254,27 @@ class _TriggerInfo {
 }
 
 class _CoverageTopBackgroundPainter extends CustomPainter {
-  const _CoverageTopBackgroundPainter();
+  const _CoverageTopBackgroundPainter({required this.isDark});
+
+  final bool isDark;
 
   @override
   void paint(Canvas canvas, Size size) {
     final base = Paint()
-      ..shader = const LinearGradient(
+      ..shader = LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
-        colors: [
-          AppColors.accentLight,
-          Color(0xFFD7F3EF),
-          Color(0xFFF4FBF9),
-        ],
+        colors: isDark
+            ? <Color>[
+                AppColors.nightSurface,
+                AppColors.nightSurfaceElevated,
+                AppColors.nightBackground,
+              ]
+            : <Color>[
+                AppColors.accentLight,
+                const Color(0xFFD7F3EF),
+                const Color(0xFFF4FBF9),
+              ],
       ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
 
     final basePath = Path()
@@ -1221,7 +1289,9 @@ class _CoverageTopBackgroundPainter extends CustomPainter {
     canvas.drawPath(basePath, base);
 
     final stripePaint = Paint()
-      ..color = AppColors.primary.withValues(alpha: 0.08)
+      ..color = (isDark ? AppColors.neonCyan : AppColors.primary).withValues(
+        alpha: 0.10,
+      )
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.2;
 
@@ -1236,10 +1306,25 @@ class _CoverageTopBackgroundPainter extends CustomPainter {
       stripePaint,
     );
 
-    final dotPaint = Paint()..color = AppColors.accent.withValues(alpha: 0.18);
-    canvas.drawCircle(Offset(size.width * 0.15, size.height * 0.12), 12, dotPaint);
-    canvas.drawCircle(Offset(size.width * 0.82, size.height * 0.2), 20, dotPaint);
-    canvas.drawCircle(Offset(size.width * 0.58, size.height * 0.72), 10, dotPaint);
+    final dotPaint = Paint()
+      ..color = (isDark ? AppColors.neonPurple : AppColors.accent).withValues(
+        alpha: 0.18,
+      );
+    canvas.drawCircle(
+      Offset(size.width * 0.15, size.height * 0.12),
+      12,
+      dotPaint,
+    );
+    canvas.drawCircle(
+      Offset(size.width * 0.82, size.height * 0.2),
+      20,
+      dotPaint,
+    );
+    canvas.drawCircle(
+      Offset(size.width * 0.58, size.height * 0.72),
+      10,
+      dotPaint,
+    );
   }
 
   @override

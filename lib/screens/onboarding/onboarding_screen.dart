@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../routes/app_routes.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -11,6 +14,9 @@ class OnboardingScreen extends StatefulWidget {
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
   int _currentPage = 0;
+  bool _isRedirecting = false;
+
+  static const String _onboardingSeenKey = 'product_onboarding_seen';
 
   static const List<_OnboardingSlide> _slides = [
     _OnboardingSlide(
@@ -48,7 +54,29 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     ),
   ];
 
-  void _finishOnboarding(BuildContext context) {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _maybeSkipOnboarding();
+    });
+  }
+
+  Future<void> _maybeSkipOnboarding() async {
+    if (_isRedirecting || !mounted) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final seen = prefs.getBool(_onboardingSeenKey) ?? false;
+    if (!seen || !mounted) return;
+
+    _isRedirecting = true;
+    Navigator.pushReplacementNamed(context, AppRoutes.bootstrap);
+  }
+
+  Future<void> _finishOnboarding(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_onboardingSeenKey, true);
+    if (!mounted) return;
     Navigator.pushReplacementNamed(context, AppRoutes.bootstrap);
   }
 
@@ -59,7 +87,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       });
       return;
     }
-    _finishOnboarding(context);
+    unawaited(_finishOnboarding(context));
   }
 
   void _onPrevPressed() {
@@ -92,292 +120,309 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 constraints: BoxConstraints(minHeight: constraints.maxHeight),
                 child: IntrinsicHeight(
                   child: Padding(
-                    padding: EdgeInsets.fromLTRB(22, 28 * scale, 22, 22 * scale),
+                    padding: EdgeInsets.fromLTRB(
+                      22,
+                      28 * scale,
+                      22,
+                      22 * scale,
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                  // Top header with page dots and skip button
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      // Page dots
-                      Row(
-                        children: [
-                          for (int i = 0; i < _slides.length; i++) ...[
-                            Container(
-                              width: (_currentPage == i ? 20 : 6) * scale,
-                              height: 5 * scale,
-                              decoration: BoxDecoration(
-                                color: _currentPage == i
-                                    ? const Color(0xFF14B890)
-                                    : const Color(0xFFD0D5DD),
-                                borderRadius: BorderRadius.circular(3),
-                              ),
-                            ),
-                            if (i != _slides.length - 1)
-                              SizedBox(width: 6 * scale),
-                          ],
-                        ],
-                      ),
-                      if (_currentPage < _slides.length - 1)
-                        GestureDetector(
-                          onTap: () => _finishOnboarding(context),
-                          child: Container(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: 14 * scale,
-                              vertical: 7 * scale,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12 * scale),
-                              border:
-                                  Border.all(color: const Color(0xFFE9ECEF)),
-                            ),
-                            child: Text(
-                              'Skip',
-                              style: GoogleFonts.inter(
-                                fontSize: 13 * scale,
-                                fontWeight: FontWeight.w700,
-                                color: const Color(0xFF4F5660),
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-
-                  SizedBox(height: 50 * scale),
-
-                  // Heading
-                  Align(
-                    alignment: Alignment.center,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        SizedBox(
-                          width: double.infinity,
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(
-                              slide.titleLine1,
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.inter(
-                                fontSize: 42 * headingScale,
-                                fontWeight: FontWeight.w500,
-                                height: 1.0,
-                                letterSpacing: -1.2,
-                                color: const Color(0xFF171717),
-                              ),
-                            ),
-                          ),
-                        ),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(
-                              slide.titleLine2,
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.pacifico(
-                                fontSize: 52 * headingScale,
-                                fontWeight: FontWeight.w400,
-                                height: 1.05,
-                                color: const Color(0xFF14B890),
-                              ),
-                            ),
-                          ),
-                        ),
-                        SizedBox(height: 10 * scale),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(
-                              slide.titleLine3,
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.inter(
-                                fontSize: 42 * headingScale,
-                                fontWeight: FontWeight.w500,
-                                height: 1.0,
-                                letterSpacing: -1.2,
-                                color: const Color(0xFF171717),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  SizedBox(height: 16 * scale),
-
-                  // Illustration area
-                  Container(
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20 * scale),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(18 * scale),
-                      child: SizedBox(
-                        height: 300 * scale,
-                        width: double.infinity,
-                        child: Image.asset(
-                          slide.imagePath,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Container(
-                              alignment: Alignment.center,
-                              color: Colors.white,
-                              child: Text(
-                                'Image not found',
-                                style: GoogleFonts.inter(
-                                  fontSize: 14 * scale,
-                                  color: const Color(0xFF5C6169),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  SizedBox(height: 16 * scale),
-
-                  // Description
-                  Text(
-                    slide.description,
-                    style: GoogleFonts.inter(
-                      fontSize: 13 * scale,
-                      fontWeight: FontWeight.w400,
-                      height: 1.55,
-                      color: const Color(0xFF5C6169),
-                    ),
-                  ),
-
-                  SizedBox(height: 20 * scale),
-
-                  // Feature rows
-                  _FeatureRow(
-                    icon: Icons.access_time_rounded,
-                    label: slide.feature1,
-                    scale: scale,
-                  ),
-                  SizedBox(height: 13 * scale),
-                  _FeatureRow(
-                    icon: Icons.credit_card_rounded,
-                    label: slide.feature2,
-                    scale: scale,
-                  ),
-                  SizedBox(height: 13 * scale),
-                  _FeatureRow(
-                    icon: Icons.star_border_rounded,
-                    label: slide.feature3,
-                    scale: scale,
-                  ),
-
-                  const Spacer(),
-
-                  if (_currentPage == _slides.length - 1)
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        GestureDetector(
-                          onTap: () => _finishOnboarding(context),
-                          child: Container(
-                            width: double.infinity,
-                            constraints: BoxConstraints(maxWidth: 320 * scale),
-                            padding: EdgeInsets.symmetric(
-                              vertical: 16 * scale,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF14B890),
-                              borderRadius: BorderRadius.circular(18 * scale),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: const Color(0xFF14B890)
-                                      .withOpacity(0.28),
-                                  blurRadius: 18 * scale,
-                                  offset: Offset(0, 8 * scale),
-                                ),
+                        // Top header with page dots and skip button
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            // Page dots
+                            Row(
+                              children: [
+                                for (int i = 0; i < _slides.length; i++) ...[
+                                  Container(
+                                    width: (_currentPage == i ? 20 : 6) * scale,
+                                    height: 5 * scale,
+                                    decoration: BoxDecoration(
+                                      color: _currentPage == i
+                                          ? const Color(0xFF14B890)
+                                          : const Color(0xFFD0D5DD),
+                                      borderRadius: BorderRadius.circular(3),
+                                    ),
+                                  ),
+                                  if (i != _slides.length - 1)
+                                    SizedBox(width: 6 * scale),
+                                ],
                               ],
                             ),
-                            alignment: Alignment.center,
-                            child: Text(
-                              'Get Started',
-                              style: GoogleFonts.inter(
-                                fontSize: 16 * scale,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
+                            if (_currentPage < _slides.length - 1)
+                              GestureDetector(
+                                onTap: () =>
+                                    unawaited(_finishOnboarding(context)),
+                                child: Container(
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: 14 * scale,
+                                    vertical: 7 * scale,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(
+                                      12 * scale,
+                                    ),
+                                    border: Border.all(
+                                      color: const Color(0xFFE9ECEF),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    'Skip',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 13 * scale,
+                                      fontWeight: FontWeight.w700,
+                                      color: const Color(0xFF4F5660),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+
+                        SizedBox(height: 50 * scale),
+
+                        // Heading
+                        Align(
+                          alignment: Alignment.center,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              SizedBox(
+                                width: double.infinity,
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    slide.titleLine1,
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 42 * headingScale,
+                                      fontWeight: FontWeight.w500,
+                                      height: 1.0,
+                                      letterSpacing: -1.2,
+                                      color: const Color(0xFF171717),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              SizedBox(
+                                width: double.infinity,
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    slide.titleLine2,
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.pacifico(
+                                      fontSize: 52 * headingScale,
+                                      fontWeight: FontWeight.w400,
+                                      height: 1.05,
+                                      color: const Color(0xFF14B890),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              SizedBox(height: 10 * scale),
+                              SizedBox(
+                                width: double.infinity,
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    slide.titleLine3,
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 42 * headingScale,
+                                      fontWeight: FontWeight.w500,
+                                      height: 1.0,
+                                      letterSpacing: -1.2,
+                                      color: const Color(0xFF171717),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        SizedBox(height: 16 * scale),
+
+                        // Illustration area
+                        Container(
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(20 * scale),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(18 * scale),
+                            child: SizedBox(
+                              height: 300 * scale,
+                              width: double.infinity,
+                              child: Image.asset(
+                                slide.imagePath,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Container(
+                                    alignment: Alignment.center,
+                                    color: Colors.white,
+                                    child: Text(
+                                      'Image not found',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 14 * scale,
+                                        color: const Color(0xFF5C6169),
+                                      ),
+                                    ),
+                                  );
+                                },
                               ),
                             ),
                           ),
                         ),
-                      ],
-                    )
-                  else
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        // Left arrow button
-                        GestureDetector(
-                          onTap: _onPrevPressed,
-                          child: Container(
-                            width: 54 * scale,
-                            height: 54 * scale,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: _currentPage > 0
-                                  ? const Color(0xFF14B890)
-                                  : const Color(0xFFD0D5DD),
-                              boxShadow: _currentPage > 0
-                                  ? [
+
+                        SizedBox(height: 16 * scale),
+
+                        // Description
+                        Text(
+                          slide.description,
+                          style: GoogleFonts.inter(
+                            fontSize: 13 * scale,
+                            fontWeight: FontWeight.w400,
+                            height: 1.55,
+                            color: const Color(0xFF5C6169),
+                          ),
+                        ),
+
+                        SizedBox(height: 20 * scale),
+
+                        // Feature rows
+                        _FeatureRow(
+                          icon: Icons.access_time_rounded,
+                          label: slide.feature1,
+                          scale: scale,
+                        ),
+                        SizedBox(height: 13 * scale),
+                        _FeatureRow(
+                          icon: Icons.credit_card_rounded,
+                          label: slide.feature2,
+                          scale: scale,
+                        ),
+                        SizedBox(height: 13 * scale),
+                        _FeatureRow(
+                          icon: Icons.star_border_rounded,
+                          label: slide.feature3,
+                          scale: scale,
+                        ),
+
+                        const Spacer(),
+
+                        if (_currentPage == _slides.length - 1)
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              GestureDetector(
+                                onTap: () =>
+                                    unawaited(_finishOnboarding(context)),
+                                child: Container(
+                                  width: double.infinity,
+                                  constraints: BoxConstraints(
+                                    maxWidth: 320 * scale,
+                                  ),
+                                  padding: EdgeInsets.symmetric(
+                                    vertical: 16 * scale,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF14B890),
+                                    borderRadius: BorderRadius.circular(
+                                      18 * scale,
+                                    ),
+                                    boxShadow: [
                                       BoxShadow(
-                                        color: const Color(0xFF14B890)
-                                            .withOpacity(0.35),
+                                        color: const Color(
+                                          0xFF14B890,
+                                        ).withOpacity(0.28),
+                                        blurRadius: 18 * scale,
+                                        offset: Offset(0, 8 * scale),
+                                      ),
+                                    ],
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    'Get Started',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 16 * scale,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          )
+                        else
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              // Left arrow button
+                              GestureDetector(
+                                onTap: _onPrevPressed,
+                                child: Container(
+                                  width: 54 * scale,
+                                  height: 54 * scale,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: _currentPage > 0
+                                        ? const Color(0xFF14B890)
+                                        : const Color(0xFFD0D5DD),
+                                    boxShadow: _currentPage > 0
+                                        ? [
+                                            BoxShadow(
+                                              color: const Color(
+                                                0xFF14B890,
+                                              ).withOpacity(0.35),
+                                              blurRadius: 18 * scale,
+                                              offset: Offset(0, 6 * scale),
+                                            ),
+                                          ]
+                                        : [],
+                                  ),
+                                  child: const Icon(
+                                    Icons.chevron_left_rounded,
+                                    color: Colors.white,
+                                    size: 22,
+                                  ),
+                                ),
+                              ),
+                              // Right arrow button
+                              GestureDetector(
+                                onTap: () => _onNextPressed(context),
+                                child: Container(
+                                  width: 54 * scale,
+                                  height: 54 * scale,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: const Color(0xFF14B890),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: const Color(
+                                          0xFF14B890,
+                                        ).withOpacity(0.35),
                                         blurRadius: 18 * scale,
                                         offset: Offset(0, 6 * scale),
                                       ),
-                                    ]
-                                  : [],
-                            ),
-                            child: const Icon(
-                              Icons.chevron_left_rounded,
-                              color: Colors.white,
-                              size: 22,
-                            ),
-                          ),
-                        ),
-                        // Right arrow button
-                        GestureDetector(
-                          onTap: () => _onNextPressed(context),
-                          child: Container(
-                            width: 54 * scale,
-                            height: 54 * scale,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: const Color(0xFF14B890),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: const Color(0xFF14B890)
-                                      .withOpacity(0.35),
-                                  blurRadius: 18 * scale,
-                                  offset: Offset(0, 6 * scale),
+                                    ],
+                                  ),
+                                  child: const Icon(
+                                    Icons.chevron_right_rounded,
+                                    color: Colors.white,
+                                    size: 22,
+                                  ),
                                 ),
-                              ],
-                            ),
-                            child: const Icon(
-                              Icons.chevron_right_rounded,
-                              color: Colors.white,
-                              size: 22,
-                            ),
+                              ),
+                            ],
                           ),
-                        ),
                       ],
                     ),
-                ],
-              ),
                   ),
                 ),
               ),

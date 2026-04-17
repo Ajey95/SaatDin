@@ -140,7 +140,10 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AppColors.background,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 20,
+          vertical: 18,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
           borderSide: const BorderSide(color: AppColors.border),
@@ -165,11 +168,118 @@ class AppTheme {
         unselectedItemColor: AppColors.navInactive,
         type: BottomNavigationBarType.fixed,
         elevation: 8,
-        selectedLabelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-        unselectedLabelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w400),
+        selectedLabelStyle: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+        unselectedLabelStyle: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w400,
+        ),
       ),
       dividerTheme: const DividerThemeData(
         color: AppColors.borderLight,
+        thickness: 1,
+      ),
+    );
+  }
+
+  static ThemeData get darkTheme {
+    return ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.dark,
+      primaryColor: AppColors.neonGreen,
+      scaffoldBackgroundColor: AppColors.nightBackground,
+      colorScheme: const ColorScheme.dark(
+        primary: AppColors.neonGreen,
+        secondary: AppColors.neonCyan,
+        surface: AppColors.nightSurface,
+        error: AppColors.neonRed,
+        onPrimary: Colors.black,
+        onSecondary: Colors.black,
+        onSurface: Colors.white,
+        onError: Colors.white,
+      ),
+      textTheme: GoogleFonts.interTextTheme(
+        ThemeData.dark().textTheme,
+      ).apply(bodyColor: Colors.white, displayColor: Colors.white),
+      appBarTheme: AppBarTheme(
+        backgroundColor: AppColors.nightSurface,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: false,
+        titleTextStyle: GoogleFonts.inter(
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+          color: Colors.white,
+        ),
+      ),
+      cardTheme: CardThemeData(
+        color: AppColors.nightSurface,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: AppColors.nightBorder, width: 1),
+        ),
+        margin: const EdgeInsets.symmetric(vertical: 6),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.neonGreen,
+          foregroundColor: Colors.black,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          textStyle: GoogleFonts.inter(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          side: const BorderSide(color: AppColors.nightBorder, width: 1),
+          textStyle: GoogleFonts.inter(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: AppColors.nightSurfaceElevated,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 18,
+          vertical: 16,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: AppColors.nightBorder),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: AppColors.nightBorder),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: AppColors.neonGreen, width: 2),
+        ),
+      ),
+      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+        backgroundColor: AppColors.nightSurface,
+        selectedItemColor: AppColors.neonGreen,
+        unselectedItemColor: AppColors.textTertiary,
+        type: BottomNavigationBarType.fixed,
+      ),
+      dividerTheme: const DividerThemeData(
+        color: AppColors.nightBorder,
         thickness: 1,
       ),
     );

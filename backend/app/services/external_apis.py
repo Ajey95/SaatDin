@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import ssl
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, Optional
 
@@ -19,6 +20,16 @@ try:
     import aiohttp
 except ImportError:
     aiohttp = None  # type: ignore
+
+try:
+    import certifi
+except ImportError:
+    certifi = None  # type: ignore
+
+try:
+    import truststore
+except ImportError:
+    truststore = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +63,48 @@ class ExternalAPIClient:
     async def initialize(self):
         """Initialize aiohttp session if available."""
         if self._aiohttp_available:
-            self._session = aiohttp.ClientSession()
+            ssl_context = None
+            if settings.external_api_verify_ssl:
+                ca_path = settings.external_api_ca_bundle.strip()
+                try:
+                    # Default to OS trust store when available (handles enterprise roots on Windows).
+                    if not ca_path:
+                        if truststore is not None:
+                            ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                            logger.info("external_api_ssl_context=truststore")
+                        elif certifi is not None:
+                            ssl_context = ssl.create_default_context(cafile=certifi.where())
+                            logger.info("external_api_ssl_context=certifi")
+                        else:
+                            ssl_context = ssl.create_default_context()
+                            logger.info("external_api_ssl_context=default")
+                    elif ca_path.lower() == "certifi":
+                        if certifi is None:
+                            logger.warning(
+                                "external_api_certifi_requested_but_missing",
+                            )
+                            ssl_context = ssl.create_default_context()
+                        else:
+                            ssl_context = ssl.create_default_context(
+                                cafile=certifi.where(),
+                            )
+                    else:
+                        ssl_context = ssl.create_default_context(cafile=ca_path)
+                        logger.info("external_api_ssl_context=custom_bundle")
+                except Exception as exc:
+                    logger.warning(
+                        "external_api_ca_bundle_load_failed: %s",
+                        exc,
+                    )
+                    ssl_context = ssl.create_default_context()
+            else:
+                logger.warning(
+                    "external_api_ssl_verification_disabled",
+                )
+                ssl_context = False
+
+            connector = aiohttp.TCPConnector(ssl=ssl_context)
+            self._session = aiohttp.ClientSession(connector=connector)
 
     async def close(self):
         """Close aiohttp session."""

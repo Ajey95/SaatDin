@@ -7,24 +7,21 @@ class ClaimCard extends StatelessWidget {
   final Claim claim;
   final VoidCallback? onTap;
 
-  const ClaimCard({
-    super.key,
-    required this.claim,
-    this.onTap,
-  });
+  const ClaimCard({super.key, required this.claim, this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final dateFormat = DateFormat('dd MMM');
+    final accent = claim.statusColor;
 
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: AppColors.cardBackground,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.border, width: 1),
+          color: AppColors.nightSurface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: accent.withValues(alpha: 0.18), width: 1),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -37,14 +34,10 @@ class ClaimCard extends StatelessWidget {
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: claim.typeColor.withValues(alpha: 0.1),
+                    color: claim.typeColor.withValues(alpha: 0.16),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Icon(
-                    claim.typeIcon,
-                    color: claim.typeColor,
-                    size: 20,
-                  ),
+                  child: Icon(claim.typeIcon, color: claim.typeColor, size: 20),
                 ),
                 const SizedBox(width: 12),
                 // Claim info
@@ -59,7 +52,8 @@ class ClaimCard extends StatelessWidget {
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
+                          color: Colors.white,
+                          height: 1.25,
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -68,7 +62,7 @@ class ClaimCard extends StatelessWidget {
                         style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w500,
-                          color: AppColors.textTertiary,
+                          color: Colors.white70,
                           letterSpacing: 0.5,
                         ),
                       ),
@@ -84,24 +78,28 @@ class ClaimCard extends StatelessWidget {
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
+                        color: Colors.white,
                       ),
                     ),
                     const SizedBox(height: 4),
-                    // Status badge
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
                       decoration: BoxDecoration(
-                        color: claim.statusColor.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(6),
+                        color: accent.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: accent.withValues(alpha: 0.22),
+                        ),
                       ),
                       child: Text(
                         claim.statusLabel.toUpperCase(),
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w700,
-                          color: claim.statusColor,
+                          color: accent,
                           letterSpacing: 0.5,
                         ),
                       ),
@@ -110,31 +108,30 @@ class ClaimCard extends StatelessWidget {
                 ),
               ],
             ),
-            // Bank info if settled
             if (claim.bankInfo case final bankInfo?) ...[
               const SizedBox(height: 12),
               Row(
                 children: [
-                  const Icon(Icons.calendar_today,
-                      size: 12, color: AppColors.textTertiary),
+                  const Icon(
+                    Icons.calendar_today,
+                    size: 12,
+                    color: Colors.white54,
+                  ),
                   const SizedBox(width: 4),
                   Text(
                     dateFormat.format(claim.date),
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textTertiary,
-                    ),
+                    style: const TextStyle(fontSize: 12, color: Colors.white70),
                   ),
                   const SizedBox(width: 16),
-                  const Icon(Icons.account_balance,
-                      size: 12, color: AppColors.textTertiary),
+                  const Icon(
+                    Icons.account_balance,
+                    size: 12,
+                    color: Colors.white54,
+                  ),
                   const SizedBox(width: 4),
                   Text(
                     bankInfo,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textTertiary,
-                    ),
+                    style: const TextStyle(fontSize: 12, color: Colors.white70),
                   ),
                 ],
               ),

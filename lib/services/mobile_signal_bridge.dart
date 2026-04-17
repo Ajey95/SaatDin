@@ -12,7 +12,7 @@ class MobileSignalBridge {
     try {
       final result = await _channel.invokeMethod<dynamic>('getCellInfo');
       if (result is Map) {
-        return Map<String, dynamic>.from(result as Map<dynamic, dynamic>);
+        return Map<String, dynamic>.from(result);
       }
     } catch (_) {
       return null;

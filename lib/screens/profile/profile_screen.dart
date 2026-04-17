@@ -7,6 +7,7 @@ import '../../routes/app_routes.dart';
 import '../../services/api_service.dart';
 import '../../services/tab_router.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/theme_controller.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -39,23 +40,30 @@ class ProfileScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final pageBackground = isDark
+        ? AppColors.nightBackground
+        : AppColors.scaffoldBackground;
+
     return FutureBuilder<_ProfileViewData>(
       future: _loadProfileViewData(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            backgroundColor: AppColors.scaffoldBackground,
+          return Scaffold(
+            backgroundColor: pageBackground,
             body: Center(child: CircularProgressIndicator()),
           );
         }
 
         if (snapshot.hasError || snapshot.data == null) {
-          return const Scaffold(
-            backgroundColor: AppColors.scaffoldBackground,
+          return Scaffold(
+            backgroundColor: pageBackground,
             body: Center(
               child: Text(
                 'Could not load settings. Please retry.',
-                style: TextStyle(color: AppColors.textSecondary),
+                style: TextStyle(
+                  color: isDark ? Colors.white70 : AppColors.textSecondary,
+                ),
               ),
             ),
           );
@@ -68,36 +76,41 @@ class ProfileScreen extends StatelessWidget {
         final payoutDashboard = data.payoutDashboard;
         final claimCountThisMonth = _claimCountForCurrentMonth(claims);
         final perTriggerPayout = _readInt(policy, const ['perTriggerPayout']);
-        final activePlan = _readString(policy, const ['plan'], fallback: user.plan);
         final weeklyPremium = _readInt(policy, const ['weeklyPremium']);
-        final nextBillingDate = _readString(policy, const ['nextBillingDate']);
-        final renewalLabel = _renewalLabel(nextBillingDate);
-        final policyStatus = _readString(policy, const ['status'], fallback: 'active').toLowerCase();
+        final activePlan = _readString(policy, const [
+          'plan',
+        ], fallback: user.plan);
+        final locationLabel = _buildLocationLabel(user);
+        final policyStatus = _readString(policy, const [
+          'status',
+        ], fallback: 'active').toLowerCase();
         final statusLabel = policyStatus == 'active'
-          ? 'Active policy'
-          : policyStatus == 'scheduled'
+            ? 'Active policy'
+            : policyStatus == 'scheduled'
             ? 'Plan change scheduled'
             : 'Policy update pending';
+        final nextBillingDate = _readString(policy, const ['nextBillingDate']);
+        final renewalLabel = _renewalLabel(nextBillingDate);
         final payoutSummary = _readMap(payoutDashboard, const ['summary']);
         final settledTotal = _readDouble(payoutSummary, const ['settledTotal']);
         final pendingTotal = _readDouble(payoutSummary, const ['pendingTotal']);
-        final primaryUpiMasked = _readString(payoutDashboard, const ['primaryUpiMasked']);
+        final primaryUpiMasked = _readString(payoutDashboard, const [
+          'primaryUpiMasked',
+        ]);
         final provider = _readString(payoutDashboard, const ['provider']);
-        final notificationItems = _buildNotificationItems(policy);
-        final supportItems = _buildSupportItems(policy);
-
+        final contact = _formatPhone(user.phone);
         return Scaffold(
-          backgroundColor: AppColors.scaffoldBackground,
+          backgroundColor: pageBackground,
           body: Stack(
             children: [
-              const Positioned(
+              Positioned(
                 top: 0,
                 left: 0,
                 right: 0,
                 child: SizedBox(
                   height: 205,
                   child: CustomPaint(
-                    painter: _ProfileTopBackgroundPainter(),
+                    painter: _ProfileTopBackgroundPainter(isDark: isDark),
                   ),
                 ),
               ),
@@ -107,33 +120,43 @@ class ProfileScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _buildTopUtilityButtons(context, notificationItems),
+                      _buildTopUtilityButtons(context),
                       const SizedBox(height: 14),
-                      const Text(
+                      Text(
                         'Settings',
                         style: TextStyle(
                           fontSize: 30,
                           fontWeight: FontWeight.w800,
-                          color: AppColors.textPrimary,
+                          color: isDark ? Colors.white : AppColors.textPrimary,
                           letterSpacing: -0.4,
                         ),
                       ),
                       const SizedBox(height: 6),
-                      const Text(
+                      Text(
                         'Manage your profile, coverage, and payouts.',
                         style: TextStyle(
                           fontSize: 13,
-                          color: AppColors.textSecondary,
+                          color: isDark
+                              ? Colors.white70
+                              : AppColors.textSecondary,
                         ),
                       ),
                       const SizedBox(height: 16),
+                      _buildHeader(
+                        context,
+                        user,
+                        contact,
+                        statusLabel,
+                        locationLabel,
+                      ),
                       _buildCoverageBanner(
+                        context: context,
                         perTriggerPayout: perTriggerPayout,
                         activePlan: activePlan,
                         renewalLabel: renewalLabel,
                       ),
-                      _buildSectionLabel('Insurance'),
-                      _buildMenuGroup([
+                      _buildSectionLabel(context, 'Insurance'),
+                      _buildMenuGroup(context, [
                         _MenuItemData(
                           icon: Icons.receipt_long_outlined,
                           iconBg: const Color(0xFFE1F5EE),
@@ -160,21 +183,25 @@ class ProfileScreen extends StatelessWidget {
                           subtitle: activePlan.trim().isEmpty
                               ? 'Check available plans'
                               : weeklyPremium > 0
-                                  ? '$activePlan • ₹${NumberFormat('#,##0').format(weeklyPremium)}/week'
-                                  : '$activePlan plan active',
+                              ? '$activePlan • ₹${NumberFormat('#,##0').format(weeklyPremium)}/week'
+                              : '$activePlan plan active',
                           onTap: () => _switchToTab(context, 2),
                         ),
                       ]),
-                      _buildSectionLabel('Preferences'),
-                      _buildMenuGroup([
+                      _buildSectionLabel(context, 'Preferences'),
+                      _buildMenuGroup(context, [
                         _MenuItemData(
                           icon: Icons.payments_outlined,
                           iconBg: const Color(0xFFE1F5EE),
                           iconColor: const Color(0xFF0F6E56),
                           title: 'Payout settings',
                           subtitle: primaryUpiMasked.isNotEmpty
-                              ? (provider.isNotEmpty ? '$provider • $primaryUpiMasked' : primaryUpiMasked)
-                              : (provider.isNotEmpty ? provider : 'No payout account returned'),
+                              ? (provider.isNotEmpty
+                                    ? '$provider • $primaryUpiMasked'
+                                    : primaryUpiMasked)
+                              : (provider.isNotEmpty
+                                    ? provider
+                                    : 'No payout account returned'),
                           onTap: () => _switchToTab(context, 3),
                         ),
                         _MenuItemData(
@@ -190,12 +217,20 @@ class ProfileScreen extends StatelessWidget {
                           iconBg: const Color(0xFFE1F5EE),
                           iconColor: const Color(0xFF0F6E56),
                           title: 'Help and support',
-                          subtitle: supportItems.isEmpty ? null : '${supportItems.length} live support entries',
-                          onTap: () => _showSupportSheet(context, supportItems),
+                          subtitle: 'Contact help and review claim guidance',
+                          onTap: () => _showSupportSheet(context),
+                        ),
+                        _MenuItemData(
+                          icon: Icons.contrast_rounded,
+                          iconBg: const Color(0xFFE8EEFF),
+                          iconColor: const Color(0xFF2C4DAA),
+                          title: 'Appearance mode',
+                          subtitle: _themeSubtitle(),
+                          onTap: () => _showThemeModeSheet(context),
                         ),
                       ]),
-                      _buildSectionLabel('Account'),
-                      _buildMenuGroup([
+                      _buildSectionLabel(context, 'Account'),
+                      _buildMenuGroup(context, [
                         _MenuItemData(
                           icon: Icons.logout,
                           iconBg: const Color(0xFFFCEBEB),
@@ -244,7 +279,10 @@ class ProfileScreen extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.4), width: 2),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.4),
+                    width: 2,
+                  ),
                 ),
                 child: Center(
                   child: Text(
@@ -297,8 +335,14 @@ class ProfileScreen extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              _statusPill(dotColor: const Color(0xFF6EFFC4), label: policyStatus),
-              _statusPill(dotColor: const Color(0xFFFFD980), label: locationLabel),
+              _statusPill(
+                dotColor: const Color(0xFF6EFFC4),
+                label: policyStatus,
+              ),
+              _statusPill(
+                dotColor: const Color(0xFFFFD980),
+                label: locationLabel,
+              ),
             ],
           ),
         ],
@@ -306,10 +350,7 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildTopUtilityButtons(
-    BuildContext context,
-    List<_SheetItemData> notificationItems,
-  ) {
+  Widget _buildTopUtilityButtons(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -319,7 +360,7 @@ class ProfileScreen extends StatelessWidget {
         ),
         _headerIconButton(
           icon: Icons.notifications_none,
-          onTap: () => _showNotificationsSheet(context, notificationItems),
+          onTap: () => _showNotificationsSheet(context),
         ),
       ],
     );
@@ -338,8 +379,7 @@ class ProfileScreen extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(10),
-          border:
-              Border.all(color: Colors.white.withValues(alpha: 0.2)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
         ),
         child: Icon(icon, size: 20, color: Colors.white),
       ),
@@ -351,13 +391,11 @@ class ProfileScreen extends StatelessWidget {
       borderRadius: BorderRadius.circular(8),
       onTap: () => _showProfileDetailsSheet(context, user, contact),
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.18),
           borderRadius: BorderRadius.circular(8),
-          border:
-              Border.all(color: Colors.white.withValues(alpha: 0.25)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
         ),
         child: const Text(
           'Details',
@@ -371,18 +409,14 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  Widget _statusPill({
-    required Color dotColor,
-    required String label,
-  }) {
+  Widget _statusPill({required Color dotColor, required String label}) {
     return Container(
       constraints: const BoxConstraints(maxWidth: 220),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(99),
-        border:
-            Border.all(color: Colors.white.withValues(alpha: 0.2)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -390,10 +424,7 @@ class ProfileScreen extends StatelessWidget {
           Container(
             width: 6,
             height: 6,
-            decoration: BoxDecoration(
-              color: dotColor,
-              shape: BoxShape.circle,
-            ),
+            decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
           ),
           const SizedBox(width: 5),
           Flexible(
@@ -416,17 +447,24 @@ class ProfileScreen extends StatelessWidget {
   // ─── Coverage banner ───────────────────────────────────────────────────────
 
   Widget _buildCoverageBanner({
+    required BuildContext context,
     required int perTriggerPayout,
     required String activePlan,
     required String renewalLabel,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final surfaceColor = isDark ? AppColors.nightSurface : Colors.white;
+    final borderColor = isDark
+        ? AppColors.nightBorder
+        : const Color(0xFFE2EBE6);
+
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: surfaceColor,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2EBE6)),
+        border: Border.all(color: borderColor),
       ),
       child: Row(
         children: [
@@ -467,17 +505,13 @@ class ProfileScreen extends StatelessWidget {
               const SizedBox(height: 1),
               Text(
                 renewalLabel,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Colors.grey.shade500,
-                ),
+                style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
               ),
             ],
           ),
           const Spacer(),
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
               color: const Color(0xFFE1F5EE),
               borderRadius: BorderRadius.circular(99),
@@ -498,15 +532,16 @@ class ProfileScreen extends StatelessWidget {
 
   // ─── Section label ─────────────────────────────────────────────────────────
 
-  Widget _buildSectionLabel(String label) {
+  Widget _buildSectionLabel(BuildContext context, String label) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
       child: Text(
         label.toUpperCase(),
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w700,
-          color: Color(0xFF8BA897),
+          color: isDark ? Colors.white70 : const Color(0xFF8BA897),
           letterSpacing: 0.08 * 11,
         ),
       ),
@@ -515,26 +550,35 @@ class ProfileScreen extends StatelessWidget {
 
   // ─── Menu group ────────────────────────────────────────────────────────────
 
-  Widget _buildMenuGroup(List<_MenuItemData> items) {
+  Widget _buildMenuGroup(BuildContext context, List<_MenuItemData> items) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final surfaceColor = isDark ? AppColors.nightSurface : Colors.white;
+    final borderColor = isDark
+        ? AppColors.nightBorder
+        : const Color(0xFFE2EBE6);
+    final dividerColor = isDark
+        ? AppColors.nightBorder
+        : const Color(0xFFE8F0EB);
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: surfaceColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2EBE6)),
+        border: Border.all(color: borderColor),
       ),
       clipBehavior: Clip.hardEdge,
       child: Column(
         children: List.generate(items.length, (i) {
           return Column(
             children: [
-              _buildMenuRow(items[i]),
+              _buildMenuRow(context, items[i]),
               if (i < items.length - 1)
-                const Divider(
+                Divider(
                   height: 0,
                   thickness: 0.5,
                   indent: 56,
-                  color: Color(0xFFE8F0EB),
+                  color: dividerColor,
                 ),
             ],
           );
@@ -543,7 +587,7 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildMenuRow(_MenuItemData item) {
+  Widget _buildMenuRow(BuildContext context, _MenuItemData item) {
     return InkWell(
       onTap: item.onTap,
       child: Padding(
@@ -569,16 +613,18 @@ class ProfileScreen extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
-                      color: item.titleColor ?? const Color(0xFF1A2E25),
+                      color:
+                          item.titleColor ??
+                          Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                   if (item.subtitle != null) ...[
                     const SizedBox(height: 1),
                     Text(
                       item.subtitle!,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
-                        color: Color(0xFF8BA897),
+                        color: Theme.of(context).textTheme.bodySmall?.color,
                       ),
                     ),
                   ],
@@ -587,8 +633,7 @@ class ProfileScreen extends StatelessWidget {
             ),
             if (item.badge != null) ...[
               Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: const Color(0xFFE1F5EE),
                   borderRadius: BorderRadius.circular(99),
@@ -604,11 +649,7 @@ class ProfileScreen extends StatelessWidget {
               ),
               const SizedBox(width: 6),
             ],
-            const Icon(
-              Icons.chevron_right,
-              size: 18,
-              color: Color(0xFFB0C4B8),
-            ),
+            const Icon(Icons.chevron_right, size: 18, color: Color(0xFFB0C4B8)),
           ],
         ),
       ),
@@ -617,7 +658,7 @@ class ProfileScreen extends StatelessWidget {
 
   // ─── Actions ───────────────────────────────────────────────────────────────
 
-  void _showNotificationsSheet(BuildContext context, List<_SheetItemData> items) {
+  void _showNotificationsSheet(BuildContext context) {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -625,21 +666,28 @@ class ProfileScreen extends StatelessWidget {
         return ListView(
           shrinkWrap: true,
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
-          children: items
-              .map(
-                (item) => ListTile(
-                  leading: Icon(item.icon),
-                  title: Text(item.title),
-                  subtitle: Text(item.subtitle),
-                ),
-              )
-              .toList(),
+          children: const [
+            ListTile(
+              leading: Icon(Icons.verified_outlined),
+              title: Text('Profile verification completed'),
+              subtitle: Text('Your account details are fully up to date'),
+            ),
+            ListTile(
+              leading: Icon(Icons.shield_outlined),
+              title: Text('Security reminder'),
+              subtitle: Text('Review device activity once every week'),
+            ),
+          ],
         );
       },
     );
   }
 
-  void _showProfileDetailsSheet(BuildContext context, User user, String contact) {
+  void _showProfileDetailsSheet(
+    BuildContext context,
+    User user,
+    String contact,
+  ) {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -663,13 +711,21 @@ class ProfileScreen extends StatelessWidget {
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.location_on_outlined),
               title: Text(user.zone.isEmpty ? 'Zone unavailable' : user.zone),
-              subtitle: Text(user.zonePincode.isEmpty ? 'Pincode unavailable' : user.zonePincode),
+              subtitle: Text(
+                user.zonePincode.isEmpty
+                    ? 'Pincode unavailable'
+                    : user.zonePincode,
+              ),
             ),
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.local_shipping_outlined),
-              title: Text(user.platform.isEmpty ? 'Platform unavailable' : user.platform),
-              subtitle: Text(user.plan.isEmpty ? 'Plan unavailable' : '${user.plan} plan'),
+              title: Text(
+                user.platform.isEmpty ? 'Platform unavailable' : user.platform,
+              ),
+              subtitle: Text(
+                user.plan.isEmpty ? 'Plan unavailable' : '${user.plan} plan',
+              ),
             ),
           ],
         );
@@ -677,7 +733,7 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  void _showSupportSheet(BuildContext context, List<_SheetItemData> items) {
+  void _showSupportSheet(BuildContext context) {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -685,147 +741,120 @@ class ProfileScreen extends StatelessWidget {
         return ListView(
           shrinkWrap: true,
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
-          children: [
+          children: const [
             Text(
               'Help and support',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
             ),
             SizedBox(height: 12),
-            ...items
-                .map(
-                  (item) => ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(item.icon),
-                    title: Text(item.title),
-                    subtitle: Text(item.subtitle),
-                  ),
-                )
-                .toList(),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.call_outlined),
+              title: Text('Claims helpline'),
+              subtitle: Text('+91 1800 00 0000'),
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.mail_outline),
+              title: Text('Support email'),
+              subtitle: Text('support@saatdin.in'),
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.rule_folder_outlined),
+              title: Text('Escalation timeline'),
+              subtitle: Text('Manual escalations are reviewed within 2 hours.'),
+            ),
           ],
         );
       },
     );
   }
 
-  List<_SheetItemData> _buildNotificationItems(Map<String, dynamic> policy) {
-    final rawItems = _readMapList(policy, const ['notifications', 'notificationItems']);
-    return rawItems
-        .map((item) {
-          final title = _readString(item, const ['title', 'heading']);
-          final subtitle = _readString(item, const ['subtitle', 'message', 'description']);
-          if (title.isEmpty || subtitle.isEmpty) return null;
-          return _SheetItemData(
-            icon: _iconFromName(_readString(item, const ['icon', 'iconName'])),
-            title: title,
-            subtitle: subtitle,
-          );
-        })
-        .whereType<_SheetItemData>()
-        .toList();
-  }
-
-  List<_SheetItemData> _buildSupportItems(Map<String, dynamic> policy) {
-    final support = _readMap(policy, const ['support']);
-    final items = <_SheetItemData>[];
-
-    final helpline = _readString(support, const ['helpline', 'phone']);
-    final email = _readString(support, const ['email', 'supportEmail']);
-    final timeline = _readString(support, const ['escalationTimeline', 'timeline']);
-
-    if (helpline.isNotEmpty) {
-      items.add(
-        _SheetItemData(
-          icon: Icons.call_outlined,
-          title: 'Claims helpline',
-          subtitle: helpline,
-        ),
-      );
-    }
-    if (email.isNotEmpty) {
-      items.add(
-        _SheetItemData(
-          icon: Icons.mail_outline,
-          title: 'Support email',
-          subtitle: email,
-        ),
-      );
-    }
-    if (timeline.isNotEmpty) {
-      items.add(
-        _SheetItemData(
-          icon: Icons.rule_folder_outlined,
-          title: 'Escalation timeline',
-          subtitle: timeline,
-        ),
-      );
-    }
-
-    final supportItems = _readMapList(support, const ['items']);
-    for (final item in supportItems) {
-      final title = _readString(item, const ['title', 'heading']);
-      final subtitle = _readString(item, const ['subtitle', 'message', 'description']);
-      if (title.isEmpty || subtitle.isEmpty) continue;
-      items.add(
-        _SheetItemData(
-          icon: _iconFromName(_readString(item, const ['icon', 'iconName'])),
-          title: title,
-          subtitle: subtitle,
-        ),
-      );
-    }
-
-    return items;
-  }
-
-  Map<String, dynamic> _readMap(Map<String, dynamic> raw, List<String> keys) {
-    for (final key in keys) {
-      final value = raw[key];
-      if (value is Map<String, dynamic>) return value;
-    }
-    return <String, dynamic>{};
-  }
-
-  List<Map<String, dynamic>> _readMapList(Map<String, dynamic> raw, List<String> keys) {
-    for (final key in keys) {
-      final value = raw[key];
-      if (value is List) {
-        return value.whereType<Map<String, dynamic>>().toList();
-      }
-    }
-    return const <Map<String, dynamic>>[];
-  }
-
-  IconData _iconFromName(String iconName) {
-    switch (iconName.trim().toLowerCase()) {
-      case 'verified':
-      case 'check':
-        return Icons.verified_outlined;
-      case 'shield':
-      case 'security':
-        return Icons.shield_outlined;
-      case 'call':
-      case 'phone':
-        return Icons.call_outlined;
-      case 'mail':
-      case 'email':
-        return Icons.mail_outline;
-      case 'timeline':
-      case 'rules':
-        return Icons.rule_folder_outlined;
-      default:
-        return Icons.info_outline;
-    }
-  }
-
   void _showSimpleInfo(BuildContext context, String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _switchToTab(BuildContext context, int index) {
     TabRouter.switchTo(index);
     Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
+  Future<void> _showThemeModeSheet(BuildContext context) async {
+    final mode = ThemeController.instance.themeMode;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) {
+        return ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+          children: [
+            const Text(
+              'Appearance mode',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 12),
+            _themeModeTile(
+              context: context,
+              title: 'Dark',
+              subtitle: 'Best for low light and rider dashboard mode',
+              selected: mode == ThemeMode.dark,
+              onTap: () =>
+                  ThemeController.instance.setThemeMode(ThemeMode.dark),
+            ),
+            _themeModeTile(
+              context: context,
+              title: 'Light',
+              subtitle: 'High contrast daytime theme',
+              selected: mode == ThemeMode.light,
+              onTap: () =>
+                  ThemeController.instance.setThemeMode(ThemeMode.light),
+            ),
+            _themeModeTile(
+              context: context,
+              title: 'System',
+              subtitle: 'Follow your device setting automatically',
+              selected: mode == ThemeMode.system,
+              onTap: () =>
+                  ThemeController.instance.setThemeMode(ThemeMode.system),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _themeModeTile({
+    required BuildContext context,
+    required String title,
+    required String subtitle,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(
+        selected ? Icons.radio_button_checked : Icons.radio_button_off,
+      ),
+      title: Text(title),
+      subtitle: Text(subtitle),
+      onTap: () {
+        onTap();
+        Navigator.of(context).pop();
+      },
+    );
+  }
+
+  String _themeSubtitle() {
+    final mode = ThemeController.instance.themeMode;
+    return switch (mode) {
+      ThemeMode.dark => 'Currently Dark',
+      ThemeMode.light => 'Currently Light',
+      ThemeMode.system => 'Following System',
+    };
   }
 
   void _confirmLogout(BuildContext context) {
@@ -835,7 +864,8 @@ class ProfileScreen extends StatelessWidget {
         return AlertDialog(
           title: const Text('Log out'),
           content: const Text(
-              'Are you sure you want to log out of this account?'),
+            'Are you sure you want to log out of this account?',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
@@ -904,6 +934,14 @@ class ProfileScreen extends StatelessWidget {
       }
     }
     return fallback;
+  }
+
+  Map<String, dynamic> _readMap(Map<String, dynamic> raw, List<String> keys) {
+    for (final key in keys) {
+      final value = raw[key];
+      if (value is Map<String, dynamic>) return value;
+    }
+    return <String, dynamic>{};
   }
 
   int _claimCountForCurrentMonth(List<Claim> claims) {
@@ -980,18 +1018,6 @@ class _MenuItemData {
   });
 }
 
-class _SheetItemData {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-
-  const _SheetItemData({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
-}
-
 class _ProfileViewData {
   const _ProfileViewData({
     required this.user,
@@ -1007,24 +1033,38 @@ class _ProfileViewData {
 }
 
 class _ProfileTopBackgroundPainter extends CustomPainter {
-  const _ProfileTopBackgroundPainter();
+  const _ProfileTopBackgroundPainter({required this.isDark});
+
+  final bool isDark;
 
   @override
   void paint(Canvas canvas, Size size) {
     final backgroundPaint = Paint()
-      ..shader = const LinearGradient(
+      ..shader = LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
-        colors: [
-          Color(0xFFE7F8F4),
-          Color(0xFFF1FBF8),
-          Color(0xFFF8FCFA),
-        ],
+        colors: isDark
+            ? <Color>[
+                AppColors.nightSurface,
+                AppColors.nightSurfaceElevated,
+                AppColors.nightBackground,
+              ]
+            : <Color>[
+                const Color(0xFFE7F8F4),
+                const Color(0xFFF1FBF8),
+                const Color(0xFFF8FCFA),
+              ],
       ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
 
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), backgroundPaint);
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, size.width, size.height),
+      backgroundPaint,
+    );
 
-    final shapePaint = Paint()..color = AppColors.primary.withValues(alpha: 0.12);
+    final shapePaint = Paint()
+      ..color = (isDark ? AppColors.neonGreen : AppColors.primary).withValues(
+        alpha: 0.12,
+      );
     final shapePath = Path()
       ..moveTo(-20, size.height * 0.74)
       ..lineTo(size.width * 0.42, size.height * 0.56)
@@ -1037,10 +1077,20 @@ class _ProfileTopBackgroundPainter extends CustomPainter {
     final ringPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5
-      ..color = AppColors.primary.withValues(alpha: 0.15);
+      ..color = (isDark ? AppColors.neonCyan : AppColors.primary).withValues(
+        alpha: 0.16,
+      );
 
-    canvas.drawCircle(Offset(size.width * 0.18, size.height * 0.2), 32, ringPaint);
-    canvas.drawCircle(Offset(size.width * 0.86, size.height * 0.3), 48, ringPaint);
+    canvas.drawCircle(
+      Offset(size.width * 0.18, size.height * 0.2),
+      32,
+      ringPaint,
+    );
+    canvas.drawCircle(
+      Offset(size.width * 0.86, size.height * 0.3),
+      48,
+      ringPaint,
+    );
   }
 
   @override

@@ -859,12 +859,12 @@ class ApiService {
           uri,
           headers: _headers(authorized: true),
           body: jsonEncode({
-            if (latitude != null) 'latitude': latitude,
-            if (longitude != null) 'longitude': longitude,
-            if (accuracyMeters != null) 'accuracyMeters': accuracyMeters,
+            'latitude': ?latitude,
+            'longitude': ?longitude,
+            'accuracyMeters': ?accuracyMeters,
             if (capturedAt != null) 'capturedAt': capturedAt.toUtc().toIso8601String(),
-            if (towerMetadata != null) 'towerMetadata': towerMetadata,
-            if (motionMetadata != null) 'motionMetadata': motionMetadata,
+            'towerMetadata': ?towerMetadata,
+            'motionMetadata': ?motionMetadata,
           }),
         )
         .timeout(_timeout);

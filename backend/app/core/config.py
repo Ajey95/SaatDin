@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     waqi_api_key: str = ""
     tomtom_api_key: str = ""
     news_api_key: str = ""
+    external_api_verify_ssl: bool = True
+    external_api_ca_bundle: str = ""
 
     trigger_poll_minutes: int = 15
     trigger_window_sample_slack: int = 1
